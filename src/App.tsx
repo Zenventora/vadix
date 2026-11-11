@@ -58,6 +58,22 @@ const runtime = `
 const emptyElement: SelectedElement = { id: "", tag: "", text: "", href: "", src: "", alt: "", color: "", backgroundColor: "", fontSize: "", margin: "", padding: "", width: "", textAlign: "" };
 const editableExtensions = /\.(html?|css|js|jsx|ts|tsx|json|svg)$/i;
 
+function ZenVentoraAccountMenu({ user }: { user: any }) {
+  const [open, setOpen] = useState(false);
+  const name = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || "ZenVentora account";
+  const initials = String(name).trim().split(/\s+/).slice(0, 2).map((part: string) => part[0]?.toUpperCase() || "").join("") || "Z";
+  return <div className="zv-account-profile">
+    <button className="zv-account-trigger" type="button" aria-expanded={open} onClick={() => setOpen(v => !v)}>
+      <span className="zv-account-avatar">{initials}</span><span>{name}</span>
+    </button>
+    <div className="zv-account-menu" hidden={!open}>
+      <div className="zv-account-menu-head"><span className="zv-account-avatar">{initials}</span><span><strong>{name}</strong><small>{user?.email || ""}</small></span></div>
+      <a href="#" onClick={event => { event.preventDefault(); void getZenVentoraAccount().then(account => account.openAccount()); }}>Manage ZenVentora Account ↗</a>
+      <button type="button" onClick={() => void getZenVentoraAccount().then(account => account.signOut())}>Sign out</button>
+    </div>
+  </div>;
+}
+
 function buildPreview(content: string, repo: RepoInfo, filePath: string) {
   let html = content;
   if (!/<html[\s>]/i.test(html)) html = `<!doctype html><html><head><meta charset="utf-8"></head><body>${html}</body></html>`;
@@ -500,7 +516,7 @@ export default function App() {
         <a className="brand" href="#" aria-label="Site Visual Editor home"><span className="brand-mark">SV</span><span>site<span className="brand-light">visual</span><small>GIT WORKSPACE</small></span></a>
         <div className="topbar-center"><span className="status-dot" /> Existing website editor <span className="topbar-separator">/</span> <span className="muted">{repo ? `${repo.owner}/${repo.name}` : "No repository connected"}</span></div>
         <div className="topbar-actions">
-          {user ? <><span className="user-pill">{user.email}</span><button className="button subtle small" onClick={async () => { (await getZenVentoraAccount()).signOut(); setToken(""); setAccessibleRepos([]); }}>Sign out</button></> : <button className="button subtle small" onClick={() => document.getElementById("account-panel")?.scrollIntoView({ behavior: "smooth", block: "center" })}>Database account</button>}
+          {user ? <ZenVentoraAccountMenu user={user} /> : <button className="button subtle small" onClick={() => document.getElementById("account-panel")?.scrollIntoView({ behavior: "smooth", block: "center" })}>ZenVentora account</button>}
           <button className="button primary small" disabled={loading || !currentFile} onClick={saveToGit}>{loading ? "Working…" : "Save Changes · Push to Git"}</button>
         </div>
       </header>
