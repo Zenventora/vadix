@@ -99,6 +99,7 @@ export default function App() {
   const [userEmail, setUserEmail] = useState("");
   const [password, setPassword] = useState("");
   const [user, setUser] = useState<any>(null);
+  const [accountReady, setAccountReady] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<"desktop" | "tablet" | "mobile">("desktop");
@@ -114,7 +115,9 @@ export default function App() {
     getZenVentoraAccount().then(account => {
       if (!active) return;
       account.getSession().then(session => {
-        if (active) setUser(session?.user || null);
+        if (!active) return;
+        setUser(session?.user || null);
+        setAccountReady(true);
       });
       unsubscribeAccount = account.onSessionChange(session => {
         if (!active) return;
@@ -481,6 +484,14 @@ export default function App() {
       const url = URL.createObjectURL(new Blob([value], { type: "text/html;charset=utf-8" }));
       const anchor = document.createElement("a"); anchor.href = url; anchor.download = currentFile.path.split("/").pop() || "page.html"; anchor.click(); URL.revokeObjectURL(url);
     }).catch(error => setNotice({ kind: "error", text: error.message }));
+  }
+
+  if (!accountReady) {
+    return <div className="zv-account-gate"><div className="zv-account-gate-card"><h1>Checking ZenVentora account…</h1><p>Verifying your common account session before opening VADIX.</p></div></div>;
+  }
+
+  if (!user) {
+    return <div className="zv-account-gate"><div className="zv-account-gate-card"><h1>Sign in to VADIX</h1><p>VADIX uses your ZenVentora account. Create or sign in to one account and continue into the product.</p><div className="action-row" style={{justifyContent:"center",marginTop:18}}><button className="button primary" onClick={() => getZenVentoraAccount().then(account => account.signIn("vadix", window.location.origin + "/"))}>Sign in</button><button className="button subtle" onClick={() => getZenVentoraAccount().then(account => account.signUp("vadix", window.location.origin + "/"))}>Create account</button></div></div></div>;
   }
 
   return (
