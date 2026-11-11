@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { FormEvent } from "react";
-import { supabase } from "./lib/supabase";
+import { gitSupabase, supabase } from "./lib/supabase";
+import { getZenVentoraAccount } from "./lib/zenventora-account";
 import { commitRepositoryChanges, listAccessibleRepositories, listRepositoryFiles, parseRepositoryUrl, rawBaseUrl, readRepositoryFile } from "./lib/git";
 import type { AccessibleRepository, GitProvider, LoadedFile, RepoFile, RepoInfo } from "./lib/git";
 import { detectFramework } from "./lib/frameworkAdapters";
@@ -109,27 +110,39 @@ export default function App() {
 
   useEffect(() => {
     let active = true;
-    supabase.auth.getSession().then(({ data }) => {
+    let unsubscribeAccount = () => {};
+    getZenVentoraAccount().then(account => {
       if (!active) return;
-      setUser(data.session?.user || null);
-      const session = data.session as (typeof data.session & { provider_token?: string | null }) | null;
-      if (session?.provider_token) {
-        setToken(session.provider_token);
-        setProvider(session.user?.app_metadata?.provider === "gitlab" ? "gitlab" : "github");
-      }
+      account.getSession().then(session => {
+        if (active) setUser(session?.user || null);
+      });
+      unsubscribeAccount = account.onSessionChange(session => {
+        if (!active) return;
+        setUser(session?.user || null);
+        if (!session) {
+          setToken("");
+          setAccessibleRepos([]);
+          setRepo(null);
+          setSavedProjectId(null);
+        }
+      });
+    }).catch(error => {
+      if (active) setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not load ZenVentora account session." });
     });
-    const { data: listener } = supabase.auth.onAuthStateChange((_event, session) => {
-      setUser(session?.user || null);
+
+    const { data: listener } = gitSupabase.auth.onAuthStateChange((_event, session) => {
       const providerSession = session as (typeof session & { provider_token?: string | null }) | null;
       if (providerSession?.provider_token) {
         setToken(providerSession.provider_token);
         setProvider(session?.user?.app_metadata?.provider === "gitlab" ? "gitlab" : "github");
-      } else if (!session) {
-        setToken("");
-        setAccessibleRepos([]);
       }
     });
-    return () => { active = false; listener.subscription.unsubscribe(); };
+
+    return () => {
+      active = false;
+      unsubscribeAccount();
+      listener.subscription.unsubscribe();
+    };
   }, []);
 
   useEffect(() => {
@@ -211,7 +224,7 @@ export default function App() {
     setProvider(target);
     setAuthBusy(true);
     try {
-      const { error } = await supabase.auth.signInWithOAuth({
+      const { error } = await gitSupabase.auth.signInWithOAuth({
         provider: target === "github" ? "github" : "gitlab",
         options: {
           scopes: target === "github" ? "repo" : "api read_repository write_repository",
@@ -452,12 +465,10 @@ export default function App() {
   async function authAction(mode: "signin" | "signup") {
     setAuthBusy(true);
     try {
-      const result = mode === "signin"
-        ? await supabase.auth.signInWithPassword({ email: userEmail, password })
-        : await supabase.auth.signUp({ email: userEmail, password });
-      if (result.error) throw result.error;
-      if (mode === "signup" && !result.data.session) setNotice({ kind: "info", text: "Account created. Check your email to confirm, then sign in." });
-      else setNotice({ kind: "ok", text: mode === "signin" ? "Signed in. Drafts can now be saved." : "Account created and signed in." });
+      const account = await getZenVentoraAccount();
+      if (mode === "signin") account.signIn("vadix", window.location.origin + "/");
+      else account.signUp("vadix", window.location.origin + "/");
+      return;
     } catch (error) {
       setNotice({ kind: "error", text: error instanceof Error ? error.message : "Authentication failed." });
     } finally { setAuthBusy(false); }
@@ -478,7 +489,7 @@ export default function App() {
         <a className="brand" href="#" aria-label="Site Visual Editor home"><span className="brand-mark">SV</span><span>site<span className="brand-light">visual</span><small>GIT WORKSPACE</small></span></a>
         <div className="topbar-center"><span className="status-dot" /> Existing website editor <span className="topbar-separator">/</span> <span className="muted">{repo ? `${repo.owner}/${repo.name}` : "No repository connected"}</span></div>
         <div className="topbar-actions">
-          {user ? <><span className="user-pill">{user.email}</span><button className="button subtle small" onClick={async () => { await supabase.auth.signOut(); setToken(""); setAccessibleRepos([]); }}>Sign out</button></> : <button className="button subtle small" onClick={() => document.getElementById("account-panel")?.scrollIntoView({ behavior: "smooth", block: "center" })}>Database account</button>}
+          {user ? <><span className="user-pill">{user.email}</span><button className="button subtle small" onClick={async () => { (await getZenVentoraAccount()).signOut(); setToken(""); setAccessibleRepos([]); }}>Sign out</button></> : <button className="button subtle small" onClick={() => document.getElementById("account-panel")?.scrollIntoView({ behavior: "smooth", block: "center" })}>Database account</button>}
           <button className="button primary small" disabled={loading || !currentFile} onClick={saveToGit}>{loading ? "Working…" : "Save Changes · Push to Git"}</button>
         </div>
       </header>
