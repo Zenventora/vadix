@@ -128,16 +128,14 @@ export default function App() {
   useEffect(() => {
     let active = true;
     let unsubscribeAccount = () => {};
-    getZenVentoraAccount().then(account => {
+
+    getZenVentoraAccount().then(async account => {
       if (!active) return;
-      account.getSession().then(session => {
-        if (!active) return;
-        setUser(session?.user || null);
-        setAccountReady(true);
-      });
+
       unsubscribeAccount = account.onSessionChange(session => {
         if (!active) return;
         setUser(session?.user || null);
+        setAccountReady(true);
         if (!session) {
           setToken("");
           setAccessibleRepos([]);
@@ -145,8 +143,24 @@ export default function App() {
           setSavedProjectId(null);
         }
       });
+
+      try {
+        const session = await account.getSession();
+        if (!active) return;
+        setUser(session?.user || null);
+      } catch (error) {
+        if (active) {
+          setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not verify your ZenVentora account session." });
+          setUser(null);
+        }
+      } finally {
+        if (active) setAccountReady(true);
+      }
     }).catch(error => {
-      if (active) setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not load ZenVentora account session." });
+      if (active) {
+        setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not load ZenVentora account session." });
+        setAccountReady(true);
+      }
     });
 
     const { data: listener } = gitSupabase.auth.onAuthStateChange((_event, session) => {
