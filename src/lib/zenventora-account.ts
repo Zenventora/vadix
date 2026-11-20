@@ -147,19 +147,24 @@ const client: ZenVentoraAccountClient = {
     return () => data.subscription.unsubscribe();
   },
 
-  signIn(_product, returnTo) {
+  signIn(product, returnTo) {
     const target = returnTo || window.location.origin + "/";
     const url = new URL("/login", ACCOUNT_ORIGIN);
     url.searchParams.set("view", "signin");
     url.searchParams.set("returnTo", target);
+    if (product) url.searchParams.set("product", product);
     window.location.assign(url.toString());
   },
 
-  signUp(_product, returnTo) {
+  signUp(product, returnTo) {
     const target = returnTo || window.location.origin + "/";
     const url = new URL("/", ACCOUNT_ORIGIN);
     url.searchParams.set("view", "signup");
     url.searchParams.set("returnTo", target);
+    if (product) {
+      url.searchParams.set("product", product);
+      url.searchParams.set("productFlow", "signup");
+    }
     window.location.assign(url.toString());
   },
 
