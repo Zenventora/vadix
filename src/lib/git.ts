@@ -74,16 +74,20 @@ async function checkedFetch(url: string, init: RequestInit) {
     try {
       const body = await response.json();
       detail = body.message || body.error || body.error_description || "";
+      if (body.errors?.length) detail += " · " + body.errors.map((item: any) => item.message || item.code || JSON.stringify(item)).join("; ");
     } catch { /* response body was not JSON */ }
-    if (response.status === 401 || response.status === 403) {
-      throw new Error("Access denied. Check the token permissions and repository access.");
+    const method = (init.method || "GET").toUpperCase();
+    const endpoint = url.replace(/^https:\/\/api\.github\.com/, "GitHub API");
+    if (response.status === 401) throw new Error(`GitHub authentication failed (401) for ${method} ${endpoint}. Verify the token is valid and not expired.`);
+    if (response.status === 403) {
+      throw new Error(`GitHub denied ${method} ${endpoint} (403). The token needs repository Contents: read and write permission, must be authorized for the Zenventora organization if SSO is enabled, and the target branch must allow this commit. GitHub response: ${detail || response.statusText}`);
     }
-    if (response.status === 404) throw new Error("Repository, branch, or file was not found. Check the URL and branch.");
-    throw new Error(detail || `Git provider returned HTTP ${response.status}`);
+    if (response.status === 404) throw new Error(`GitHub could not find ${method} ${endpoint} (404). Check repository, branch, or file path. ${detail}`);
+    if (response.status === 409 || response.status === 422) throw new Error(`GitHub rejected ${method} ${endpoint} (${response.status}). The file may have changed, already exist, or branch rules may require a pull request. ${detail}`);
+    throw new Error(detail || `Git provider returned HTTP ${response.status} for ${method} ${endpoint}`);
   }
   return response;
 }
-
 export async function listRepositoryFiles(repo: RepoInfo, token: string): Promise<RepoFile[]> {
   if (repo.provider === "github") {
     const response = await checkedFetch(`${apiRoot(repo)}/git/trees/${repo.branch.split("/").map(encodeURIComponent).join("/")}?recursive=1`, { headers: headers(repo, token) });
