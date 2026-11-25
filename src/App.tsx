@@ -478,33 +478,21 @@ export default function App() {
       if (/\.html?$/i.test(currentFile.path)) setFrameHtml(buildPreview(content, repo, currentFile.path));
       stagedAssets.forEach(asset => URL.revokeObjectURL(asset.previewUrl));
       setStagedAssets([]);
-      if (user) {
-        let projectId = savedProjectId;
-        if (!projectId) {
-          const { data, error } = await supabase.from("visual_editor_projects").insert({
-            owner_id: user.id,
-            name: `${repo.owner}/${repo.name}`,
-            provider: repo.provider,
-            repository_owner: repo.owner,
-            repository_name: repo.name,
-            default_branch: repo.branch,
-            project_root: repo.root || "/",
-            framework: inferFramework(files),
-            settings: { lastOpenedFile: currentFile.path, editor: "visual" },
-            last_commit_sha: result.commitSha || null,
-            updated_at: new Date().toISOString()
-          }).select("id").single();
-          if (error) throw error;
-          projectId = data.id;
-          setSavedProjectId(projectId);
-        } else {
-          const { error } = await supabase.from("visual_editor_projects").update({ last_commit_sha: result.commitSha || null, updated_at: new Date().toISOString() }).eq("id", projectId);
-          if (error) throw error;
-        }
-        const { error: revisionError } = await supabase.from("visual_editor_revisions").insert({ project_id: projectId, owner_id: user.id, label: `Commit · ${currentFile.path}`, status: "committed", snapshot: { path: currentFile.path, content, savedAt: new Date().toISOString() }, changed_files: [currentFile.path], commit_sha: result.commitSha || null });
-        if (revisionError) throw revisionError;
-      }
-      setNotice({ kind: "ok", text: `Committed ${currentFile.path} to ${repo.branch}.${result.commitSha ? ` Commit: ${result.commitSha.slice(0, 8)}` : ""}` });
+      // Common ZenVentora account JWT belongs to a different Supabase project and
+      // cannot authenticate against VADIX's PostgREST database (PGRST301).
+      // Keep editor commit history locally until a trusted server-side history API
+      // is configured; never report a successful Git push as a failed operation.
+      const historyKey = "vadix:git-history:" + repo.owner + "/" + repo.name + ":" + repo.branch;
+      const priorHistory = JSON.parse(localStorage.getItem(historyKey) || "[]");
+      priorHistory.unshift({
+        path: currentFile.path,
+        message: commitMessage.trim() || "Update website with visual editor",
+        commitSha: result.commitSha || null,
+        savedAt: new Date().toISOString(),
+        changedFiles: [currentFile.path, ...stagedAssets.map(asset => asset.repoPath)]
+      });
+      localStorage.setItem(historyKey, JSON.stringify(priorHistory.slice(0, 50)));
+      setNotice({ kind: "ok", text: `Git commit succeeded and is live on GitHub. ${currentFile.path} pushed to ${repo.branch}.${result.commitSha ? ` Commit: ${result.commitSha.slice(0, 8)}` : ""} History saved in this browser.` });
     } catch (error) {
       // Supabase/PostgREST errors are plain objects, not necessarily Error instances.
       // Preserve the successful Git commit and show the real database response.
