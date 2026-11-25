@@ -506,8 +506,19 @@ export default function App() {
       }
       setNotice({ kind: "ok", text: `Committed ${currentFile.path} to ${repo.branch}.${result.commitSha ? ` Commit: ${result.commitSha.slice(0, 8)}` : ""}` });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown error";
-      setNotice({ kind: "error", text: gitCommitted ? `Git commit succeeded, but database history could not be saved: ${detail}` : detail });
+      // Supabase/PostgREST errors are plain objects, not necessarily Error instances.
+      // Preserve the successful Git commit and show the real database response.
+      const dbError = error as { message?: string; details?: string; hint?: string; code?: string; status?: number };
+      const detail = error instanceof Error
+        ? error.message
+        : [dbError?.message, dbError?.details, dbError?.hint, dbError?.code ? `Code: ${dbError.code}` : "", dbError?.status ? `HTTP: ${dbError.status}` : ""]
+            .filter(Boolean).join(" · ") || "The database returned an empty error response.";
+      setNotice({
+        kind: gitCommitted ? "info" : "error",
+        text: gitCommitted
+          ? `Git commit succeeded and is live on GitHub. VADIX history could not be recorded: ${detail}. Your GitHub changes are safe; this affects only the editor's database history.`
+          : detail
+      });
     } finally { setLoading(false); }
   }
 
