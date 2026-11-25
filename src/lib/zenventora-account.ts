@@ -43,6 +43,7 @@ const accountSupabase = createClient(ACCOUNT_SUPABASE_URL, ACCOUNT_SUPABASE_KEY,
 let cachedSession: any = null;
 let bridgeFrame: HTMLIFrameElement | null = null;
 let bridgeStarted = false;
+let handoffPending = false;
 let initialSessionResolved = false;
 let resolveInitialSession: (() => void) | null = null;
 
@@ -65,10 +66,16 @@ function cleanHandoffHash() {
   const refresh_token = params.get("refresh_token");
   if (!access_token || !refresh_token) return false;
 
+  handoffPending = true;
   void accountSupabase.auth.setSession({ access_token, refresh_token }).then(({ data, error }) => {
-    if (!error && data.session) cachedSession = data.session;
+    cachedSession = error ? null : data.session;
+    handoffPending = false;
     finishInitialSession();
-  }).catch(() => finishInitialSession());
+  }).catch(() => {
+    cachedSession = null;
+    handoffPending = false;
+    finishInitialSession();
+  });
 
   window.history.replaceState({}, document.title, window.location.pathname + window.location.search);
   return true;
@@ -91,8 +98,13 @@ function startBridge() {
 
     const session = event.data.session;
     if (!session?.access_token || !session?.refresh_token) {
-      if (!cachedSession) await accountSupabase.auth.signOut({ scope: "local" });
-      finishInitialSession();
+      // The account iframe may return an empty session in a partitioned browser
+      // context while a top-level login handoff is still being applied.
+      // Never let that empty iframe response erase the pending product session.
+      if (!cachedSession && !handoffPending) {
+        await accountSupabase.auth.signOut({ scope: "local" });
+        finishInitialSession();
+      }
       return;
     }
 
