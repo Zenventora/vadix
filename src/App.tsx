@@ -294,35 +294,46 @@ export default function App() {
 
   async function connectRepository(event: FormEvent) {
     event.preventDefault();
-    if (!token.trim()) return setNotice({ kind: "error", text: "Connect your Git provider or enter an access token to read this repository." });
+    if (!token.trim()) return setNotice({ kind: "error", text: "Connect GitHub or paste a repository access token first." });
     setLoading(true);
-    setNotice({ kind: "info", text: "Scanning repository files…" });
+    setNotice({ kind: "info", text: "Checking GitHub access and scanning repository files…" });
     try {
       const parsed = parseRepositoryUrl(repoUrl, branch, root);
       if (parsed.provider !== provider) setProvider(parsed.provider);
+
+      // Git access is the primary operation. A failure to persist editor metadata
+      // must not discard a successfully fetched repository tree.
       const list = await listRepositoryFiles(parsed, token.trim());
+      let persistenceWarning = "";
+      let projectId: string | null = null;
       if (user) {
-        const projectPayload = {
-          owner_id: user.id, name: parsed.owner + "/" + parsed.name, provider: parsed.provider,
-          repository_owner: parsed.owner, repository_name: parsed.name, default_branch: parsed.branch,
-          project_root: parsed.root || "/", framework: inferFramework(list),
-          settings: { lastOpenedFile: null, editor: "visual" }, updated_at: new Date().toISOString()
-        };
-        const { data: existing, error: lookupError } = await supabase.from("visual_editor_projects").select("id")
-          .eq("owner_id", user.id).eq("provider", parsed.provider)
-          .eq("repository_owner", parsed.owner).eq("repository_name", parsed.name).maybeSingle();
-        if (lookupError) throw lookupError;
-        if (existing?.id) {
-          const { error } = await supabase.from("visual_editor_projects").update(projectPayload).eq("id", existing.id);
-          if (error) throw error;
-          setSavedProjectId(existing.id);
-        } else {
-          const { data: created, error } = await supabase.from("visual_editor_projects").insert(projectPayload).select("id").single();
-          if (error) throw error;
-          setSavedProjectId(created.id);
+        try {
+          const projectPayload = {
+            owner_id: user.id, name: parsed.owner + "/" + parsed.name, provider: parsed.provider,
+            repository_owner: parsed.owner, repository_name: parsed.name, default_branch: parsed.branch,
+            project_root: parsed.root || "/", framework: inferFramework(list),
+            settings: { lastOpenedFile: null, editor: "visual" }, updated_at: new Date().toISOString()
+          };
+          const { data: existing, error: lookupError } = await supabase.from("visual_editor_projects").select("id")
+            .eq("owner_id", user.id).eq("provider", parsed.provider)
+            .eq("repository_owner", parsed.owner).eq("repository_name", parsed.name).maybeSingle();
+          if (lookupError) throw lookupError;
+          if (existing?.id) {
+            const { error } = await supabase.from("visual_editor_projects").update(projectPayload).eq("id", existing.id);
+            if (error) throw error;
+            projectId = existing.id;
+          } else {
+            const { data: created, error } = await supabase.from("visual_editor_projects").insert(projectPayload).select("id").single();
+            if (error) throw error;
+            projectId = created.id;
+          }
+        } catch (dbError) {
+          const detail = dbError instanceof Error ? dbError.message : String((dbError as any)?.message || (dbError as any)?.details || (dbError as any)?.hint || "Database policy/schema rejected project metadata.");
+          persistenceWarning = " Repository connected, but workspace history could not be saved: " + detail;
         }
       }
-      if (!user && (!repo || repo.provider !== parsed.provider || repo.owner !== parsed.owner || repo.name !== parsed.name)) setSavedProjectId(null);
+
+      setSavedProjectId(projectId);
       setRepo(parsed);
       setFiles(list);
       setCurrentFile(null);
@@ -330,10 +341,14 @@ export default function App() {
       setFrameHtml("");
       setSelected(emptyElement);
       setDirty(false);
-      setNotice({ kind: "ok", text: `Connected to ${parsed.owner}/${parsed.name}. Found ${list.length} files. Framework hint: ${inferFramework(list)}.` });
+      setNotice({
+        kind: persistenceWarning ? "info" : "ok",
+        text: "Connected to " + parsed.owner + "/" + parsed.name + ". Found " + list.length + " files. Select an HTML or source file from the left to edit." + persistenceWarning
+      });
       setShowConnect(false);
     } catch (error) {
-      setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not connect to repository." });
+      const detail = error instanceof Error ? error.message : String((error as any)?.message || (error as any)?.details || (error as any)?.hint || JSON.stringify(error) || "Unknown error");
+      setNotice({ kind: "error", text: "Git repository connection failed: " + detail });
     } finally { setLoading(false); }
   }
 
