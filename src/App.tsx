@@ -58,6 +58,28 @@ const runtime = `
 const emptyElement: SelectedElement = { id: "", tag: "", text: "", href: "", src: "", alt: "", color: "", backgroundColor: "", fontSize: "", margin: "", padding: "", width: "", textAlign: "" };
 const editableExtensions = /\.(html?|css|js|jsx|ts|tsx|json|svg)$/i;
 
+type StarterTemplate = { id: string; title: string; description: string; accent: string; heading: string; subheading: string; sections: string[] };
+const starterTemplates: StarterTemplate[] = [
+  { id: "business", title: "Business Website", description: "Services, company profile and contact", accent: "#2563eb", heading: "A business built on trust.", subheading: "Introduce your company, services and the people behind your work.", sections: ["Our Services", "Why Choose Us", "Contact Our Team"] },
+  { id: "commerce", title: "E-commerce", description: "Product catalogue and shopping sections", accent: "#0f766e", heading: "Good things, thoughtfully made.", subheading: "Showcase your products and make it easy for customers to discover them.", sections: ["Featured Products", "Shop by Category", "Shipping & Returns"] },
+  { id: "portfolio", title: "Portfolio", description: "Projects, skills and personal profile", accent: "#7c3aed", heading: "Selected work. Real impact.", subheading: "A clear portfolio to present your experience and best projects.", sections: ["Featured Projects", "About Me", "Let's Collaborate"] },
+  { id: "restaurant", title: "Restaurant & Food", description: "Menu, story and reservations", accent: "#b45309", heading: "Made fresh. Served with care.", subheading: "Share your menu, story, opening hours and location.", sections: ["Our Menu", "The Story", "Find Us"] },
+  { id: "hospitality", title: "Hotel & Hospitality", description: "Stay, facilities and booking enquiry", accent: "#0e7490", heading: "Your next memorable stay.", subheading: "Present your property, rooms, amenities and guest experiences.", sections: ["Rooms & Suites", "Experiences", "Plan Your Stay"] },
+  { id: "landing", title: "Product Landing Page", description: "One focused page for a service or launch", accent: "#be185d", heading: "Make your next move count.", subheading: "A focused landing page with a clear message and call to action.", sections: ["What You Get", "How It Works", "Get Started"] }
+];
+function buildStarterHtml(template: StarterTemplate) {
+  const esc = (value: string) => value.replace(/[&<>"]/g, char => { const entities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"' : "&quot;" }; return entities[char] || char; });
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(template.title)} | Your Brand</title>
+<style>*{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;color:#172033;background:#fff}header{display:flex;justify-content:space-between;align-items:center;padding:22px max(6vw,24px);border-bottom:1px solid #edf0f5}header strong{font-size:20px;color:${template.accent}}nav a{margin-left:22px;color:#475569;text-decoration:none;font-size:14px}.hero{padding:100px 7vw 85px;background:linear-gradient(135deg,#f8fafc,#eef2ff)}.hero small{color:${template.accent};font-weight:700;letter-spacing:2px;text-transform:uppercase}.hero h1{font-size:clamp(38px,6vw,72px);line-height:1.05;max-width:850px;margin:22px 0}.hero p{font-size:19px;line-height:1.7;color:#64748b;max-width:650px}.cta{display:inline-block;background:${template.accent};color:white;padding:14px 24px;border-radius:8px;text-decoration:none;margin-top:18px}.section{padding:70px 7vw}.section h2{font-size:34px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.card{padding:28px;border:1px solid #e5eaf1;border-radius:14px;background:#fff;min-height:140px}.card h3{margin-top:0}.card p{color:#64748b;line-height:1.6}footer{padding:30px 7vw;background:#111827;color:#cbd5e1}@media(max-width:650px){header{padding:18px 5vw}nav a{margin-left:10px;font-size:12px}.hero{padding:65px 5vw}.section{padding:48px 5vw}.cards{grid-template-columns:1fr}}</style></head>
+<body><header><strong data-brand>Your Brand</strong><nav><a href="#about">About</a><a href="#services">Services</a><a href="#contact">Contact</a></nav></header>
+<main><section class="hero"><small>${esc(template.title)}</small><h1>${esc(template.heading)}</h1><p>${esc(template.subheading)}</p><a class="cta" href="#contact">Let's Talk</a></section>
+<section class="section" id="about"><h2>Welcome to Your Brand</h2><p>Replace this introduction with your business details, story and value proposition.</p></section>
+<section class="section" id="services"><div class="cards">${template.sections.map((section, index) => `<article class="card"><h3>${esc(section)}</h3><p>Add your content, image and details here. Select this element in VADIX to edit it.</p></article>`).join("")}</div></section>
+<section class="section" id="contact"><h2>Let's connect</h2><p>Phone: [Your phone] · Email: [Your email] · Address: [Your business address]</p><a class="cta" href="mailto:hello@example.com">Contact Us</a></section></main><footer>© <span data-year>${new Date().getFullYear()}</span> Your Brand · All rights reserved</footer></body></html>`;
+}
+
+
 function ZenVentoraAccountMenu({ user }: { user: any }) {
   const [open, setOpen] = useState(false);
   const name = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || "ZenVentora account";
@@ -121,23 +143,24 @@ export default function App() {
   const [viewport, setViewport] = useState<"desktop" | "tablet" | "mobile">("desktop");
   const [commitMessage, setCommitMessage] = useState("Update website with visual editor");
   const [stagedAssets, setStagedAssets] = useState<StagedAsset[]>([]);
+  const undoHistory = useRef<string[]>([]);
+  const redoHistory = useRef<string[]>([]);
   const [showConnect, setShowConnect] = useState(true);
+  const connectFormRef = useRef<HTMLFormElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const htmlResultResolve = useRef<((html: string) => void) | null>(null);
 
   useEffect(() => {
     let active = true;
     let unsubscribeAccount = () => {};
-    getZenVentoraAccount().then(account => {
+
+    getZenVentoraAccount().then(async account => {
       if (!active) return;
-      account.getSession().then(session => {
-        if (!active) return;
-        setUser(session?.user || null);
-        setAccountReady(true);
-      });
+
       unsubscribeAccount = account.onSessionChange(session => {
         if (!active) return;
         setUser(session?.user || null);
+        setAccountReady(true);
         if (!session) {
           setToken("");
           setAccessibleRepos([]);
@@ -145,8 +168,24 @@ export default function App() {
           setSavedProjectId(null);
         }
       });
+
+      try {
+        const session = await account.getSession();
+        if (!active) return;
+        setUser(session?.user || null);
+      } catch (error) {
+        if (active) {
+          setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not verify your ZenVentora account session." });
+          setUser(null);
+        }
+      } finally {
+        if (active) setAccountReady(true);
+      }
     }).catch(error => {
-      if (active) setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not load ZenVentora account session." });
+      if (active) {
+        setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not load ZenVentora account session." });
+        setAccountReady(true);
+      }
     });
 
     const { data: listener } = gitSupabase.auth.onAuthStateChange((_event, session) => {
@@ -279,35 +318,46 @@ export default function App() {
 
   async function connectRepository(event: FormEvent) {
     event.preventDefault();
-    if (!token.trim()) return setNotice({ kind: "error", text: "Connect your Git provider or enter an access token to read this repository." });
+    if (!token.trim()) return setNotice({ kind: "error", text: "Connect GitHub or paste a repository access token first." });
     setLoading(true);
-    setNotice({ kind: "info", text: "Scanning repository files…" });
+    setNotice({ kind: "info", text: "Checking GitHub access and scanning repository files…" });
     try {
       const parsed = parseRepositoryUrl(repoUrl, branch, root);
       if (parsed.provider !== provider) setProvider(parsed.provider);
+
+      // Git access is the primary operation. A failure to persist editor metadata
+      // must not discard a successfully fetched repository tree.
       const list = await listRepositoryFiles(parsed, token.trim());
+      let persistenceWarning = "";
+      let projectId: string | null = null;
       if (user) {
-        const projectPayload = {
-          owner_id: user.id, name: parsed.owner + "/" + parsed.name, provider: parsed.provider,
-          repository_owner: parsed.owner, repository_name: parsed.name, default_branch: parsed.branch,
-          project_root: parsed.root || "/", framework: inferFramework(list),
-          settings: { lastOpenedFile: null, editor: "visual" }, updated_at: new Date().toISOString()
-        };
-        const { data: existing, error: lookupError } = await supabase.from("visual_editor_projects").select("id")
-          .eq("owner_id", user.id).eq("provider", parsed.provider)
-          .eq("repository_owner", parsed.owner).eq("repository_name", parsed.name).maybeSingle();
-        if (lookupError) throw lookupError;
-        if (existing?.id) {
-          const { error } = await supabase.from("visual_editor_projects").update(projectPayload).eq("id", existing.id);
-          if (error) throw error;
-          setSavedProjectId(existing.id);
-        } else {
-          const { data: created, error } = await supabase.from("visual_editor_projects").insert(projectPayload).select("id").single();
-          if (error) throw error;
-          setSavedProjectId(created.id);
+        try {
+          const projectPayload = {
+            owner_id: user.id, name: parsed.owner + "/" + parsed.name, provider: parsed.provider,
+            repository_owner: parsed.owner, repository_name: parsed.name, default_branch: parsed.branch,
+            project_root: parsed.root || "/", framework: inferFramework(list),
+            settings: { lastOpenedFile: null, editor: "visual" }, updated_at: new Date().toISOString()
+          };
+          const { data: existing, error: lookupError } = await supabase.from("visual_editor_projects").select("id")
+            .eq("owner_id", user.id).eq("provider", parsed.provider)
+            .eq("repository_owner", parsed.owner).eq("repository_name", parsed.name).maybeSingle();
+          if (lookupError) throw lookupError;
+          if (existing?.id) {
+            const { error } = await supabase.from("visual_editor_projects").update(projectPayload).eq("id", existing.id);
+            if (error) throw error;
+            projectId = existing.id;
+          } else {
+            const { data: created, error } = await supabase.from("visual_editor_projects").insert(projectPayload).select("id").single();
+            if (error) throw error;
+            projectId = created.id;
+          }
+        } catch (dbError) {
+          const detail = dbError instanceof Error ? dbError.message : String((dbError as any)?.message || (dbError as any)?.details || (dbError as any)?.hint || "Database policy/schema rejected project metadata.");
+          persistenceWarning = " Repository connected, but workspace history could not be saved: " + detail;
         }
       }
-      if (!user && (!repo || repo.provider !== parsed.provider || repo.owner !== parsed.owner || repo.name !== parsed.name)) setSavedProjectId(null);
+
+      setSavedProjectId(projectId);
       setRepo(parsed);
       setFiles(list);
       setCurrentFile(null);
@@ -315,11 +365,33 @@ export default function App() {
       setFrameHtml("");
       setSelected(emptyElement);
       setDirty(false);
-      setNotice({ kind: "ok", text: `Connected to ${parsed.owner}/${parsed.name}. Found ${list.length} files. Framework hint: ${inferFramework(list)}.` });
+      setNotice({
+        kind: persistenceWarning ? "info" : "ok",
+        text: "Connected to " + parsed.owner + "/" + parsed.name + ". Found " + list.length + " files. Select an HTML or source file from the left to edit." + persistenceWarning
+      });
       setShowConnect(false);
     } catch (error) {
-      setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not connect to repository." });
+      const detail = error instanceof Error ? error.message : String((error as any)?.message || (error as any)?.details || (error as any)?.hint || JSON.stringify(error) || "Unknown error");
+      setNotice({ kind: "error", text: "Git repository connection failed: " + detail });
     } finally { setLoading(false); }
+  }
+
+  function startFromTemplate(template: StarterTemplate) {
+    if (!repo) {
+      setNotice({ kind: "info", text: "Connect the customer's Git repository first. The starter template will be created only inside that selected repository." });
+      setShowConnect(true);
+      return;
+    }
+    const path = (repo.root ? repo.root + "/" : "") + "vadix-starters/" + template.id + "/index.html";
+    const file: LoadedFile = { path, content: buildStarterHtml(template) };
+    setCurrentFile(file);
+    setOriginalFile({ path, content: "" });
+    setFrameHtml(buildPreview(file.content, repo, path));
+    setSelected(emptyElement);
+    setDirty(true);
+    undoHistory.current = [];
+    redoHistory.current = [];
+    setNotice({ kind: "info", text: template.title + " starter opened as a draft. Customize it in the visual editor; Git push creates a new file without overwriting the customer's existing website." });
   }
 
   async function openFile(path: string) {
@@ -375,6 +447,7 @@ export default function App() {
   }
 
   function applyPatch(patch: Partial<SelectedElement>) {
+    recordUndo();
     const next = { ...selected, ...patch };
     setSelected(next);
     frameRef.current?.contentWindow?.postMessage({ type: "ve-apply", patch }, "*");
@@ -390,6 +463,66 @@ export default function App() {
         if (htmlResultResolve.current) { htmlResultResolve.current = null; reject(new Error("Could not read the preview HTML. Reload the page and try again.")); }
       }, 3000);
     });
+  }
+
+  function captureEditorSnapshot() {
+    const doc = frameRef.current?.contentDocument;
+    if (!doc?.documentElement) return null;
+    const clone = doc.documentElement.cloneNode(true) as HTMLElement;
+    clone.querySelectorAll("#__site_visual_editor_runtime, #__site_visual_editor_highlight, #__site_visual_editor_base").forEach(node => node.remove());
+    clone.querySelectorAll("[data-ve-id], [data-ve-selected]").forEach(node => {
+      node.removeAttribute("data-ve-id");
+      node.removeAttribute("data-ve-selected");
+    });
+    return "<!doctype html>\\n" + clone.outerHTML;
+  }
+
+  function recordUndo() {
+    const snapshot = captureEditorSnapshot();
+    if (!snapshot) return;
+    undoHistory.current = [...undoHistory.current.slice(-59), snapshot];
+    redoHistory.current = [];
+  }
+
+  function restoreHistory(direction: "undo" | "redo") {
+    if (!repo || !currentFile) return;
+    const source = direction === "undo" ? undoHistory.current : redoHistory.current;
+    const target = source.pop();
+    if (!target) return;
+    const current = captureEditorSnapshot();
+    if (current) {
+      const opposite = direction === "undo" ? redoHistory.current : undoHistory.current;
+      opposite.push(current);
+    }
+    setCurrentFile(file => file ? { ...file, content: target } : file);
+    setFrameHtml(buildPreview(target, repo, currentFile.path));
+    setSelected(emptyElement);
+    setDirty(true);
+    setNotice({ kind: "info", text: direction === "undo" ? "Last visual change undone. Save or push when ready." : "Change restored. Save or push when ready." });
+  }
+
+  function downloadBackup() {
+    if (!originalFile) return;
+    const blob = new Blob([originalFile.content], { type: /\\.html?$/i.test(originalFile.path) ? "text/html;charset=utf-8" : "text/plain;charset=utf-8" });
+    const url = URL.createObjectURL(blob);
+    const anchor = document.createElement("a");
+    anchor.href = url;
+    anchor.download = (originalFile.path.split("/").pop() || "website-file") + ".backup";
+    anchor.click();
+    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+    setNotice({ kind: "ok", text: "Original repository version downloaded as a backup. It remains unchanged until you commit." });
+  }
+
+  function openSeparatePreview() {
+    if (!previewSrc) return;
+    const previewWindow = window.open("", "_blank");
+    if (!previewWindow) {
+      setNotice({ kind: "error", text: "Your browser blocked the preview window. Allow pop-ups for VADIX and try again." });
+      return;
+    }
+    previewWindow.document.open();
+    previewWindow.document.write(previewSrc);
+    previewWindow.document.close();
   }
 
   async function saveDraft() {
@@ -448,36 +581,35 @@ export default function App() {
       if (/\.html?$/i.test(currentFile.path)) setFrameHtml(buildPreview(content, repo, currentFile.path));
       stagedAssets.forEach(asset => URL.revokeObjectURL(asset.previewUrl));
       setStagedAssets([]);
-      if (user) {
-        let projectId = savedProjectId;
-        if (!projectId) {
-          const { data, error } = await supabase.from("visual_editor_projects").insert({
-            owner_id: user.id,
-            name: `${repo.owner}/${repo.name}`,
-            provider: repo.provider,
-            repository_owner: repo.owner,
-            repository_name: repo.name,
-            default_branch: repo.branch,
-            project_root: repo.root || "/",
-            framework: inferFramework(files),
-            settings: { lastOpenedFile: currentFile.path, editor: "visual" },
-            last_commit_sha: result.commitSha || null,
-            updated_at: new Date().toISOString()
-          }).select("id").single();
-          if (error) throw error;
-          projectId = data.id;
-          setSavedProjectId(projectId);
-        } else {
-          const { error } = await supabase.from("visual_editor_projects").update({ last_commit_sha: result.commitSha || null, updated_at: new Date().toISOString() }).eq("id", projectId);
-          if (error) throw error;
-        }
-        const { error: revisionError } = await supabase.from("visual_editor_revisions").insert({ project_id: projectId, owner_id: user.id, label: `Commit · ${currentFile.path}`, status: "committed", snapshot: { path: currentFile.path, content, savedAt: new Date().toISOString() }, changed_files: [currentFile.path], commit_sha: result.commitSha || null });
-        if (revisionError) throw revisionError;
-      }
-      setNotice({ kind: "ok", text: `Committed ${currentFile.path} to ${repo.branch}.${result.commitSha ? ` Commit: ${result.commitSha.slice(0, 8)}` : ""}` });
+      // Common ZenVentora account JWT belongs to a different Supabase project and
+      // cannot authenticate against VADIX's PostgREST database (PGRST301).
+      // Keep editor commit history locally until a trusted server-side history API
+      // is configured; never report a successful Git push as a failed operation.
+      const historyKey = "vadix:git-history:" + repo.owner + "/" + repo.name + ":" + repo.branch;
+      const priorHistory = JSON.parse(localStorage.getItem(historyKey) || "[]");
+      priorHistory.unshift({
+        path: currentFile.path,
+        message: commitMessage.trim() || "Update website with visual editor",
+        commitSha: result.commitSha || null,
+        savedAt: new Date().toISOString(),
+        changedFiles: [currentFile.path, ...stagedAssets.map(asset => asset.repoPath)]
+      });
+      localStorage.setItem(historyKey, JSON.stringify(priorHistory.slice(0, 50)));
+      setNotice({ kind: "ok", text: `Git commit succeeded and is live on GitHub. ${currentFile.path} pushed to ${repo.branch}.${result.commitSha ? ` Commit: ${result.commitSha.slice(0, 8)}` : ""} History saved in this browser.` });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : "Unknown error";
-      setNotice({ kind: "error", text: gitCommitted ? `Git commit succeeded, but database history could not be saved: ${detail}` : detail });
+      // Supabase/PostgREST errors are plain objects, not necessarily Error instances.
+      // Preserve the successful Git commit and show the real database response.
+      const dbError = error as { message?: string; details?: string; hint?: string; code?: string; status?: number };
+      const detail = error instanceof Error
+        ? error.message
+        : [dbError?.message, dbError?.details, dbError?.hint, dbError?.code ? `Code: ${dbError.code}` : "", dbError?.status ? `HTTP: ${dbError.status}` : ""]
+            .filter(Boolean).join(" · ") || "The database returned an empty error response.";
+      setNotice({
+        kind: gitCommitted ? "info" : "error",
+        text: gitCommitted
+          ? `Git commit succeeded and is live on GitHub. VADIX history could not be recorded: ${detail}. Your GitHub changes are safe; this affects only the editor's database history.`
+          : detail
+      });
     } finally { setLoading(false); }
   }
 
@@ -524,7 +656,7 @@ export default function App() {
       <main className="workspace">
         <aside className="left-rail">
           <div className="rail-heading"><span>PROJECT</span><button className="icon-button" title="Connect another repository" onClick={() => setShowConnect(!showConnect)}>＋</button></div>
-          {showConnect && <form className="connect-form" onSubmit={connectRepository}>
+          {showConnect && <form id="connect-repository-form" ref={connectFormRef} className="connect-form" onSubmit={connectRepository}>
             <label>Git provider</label>
             <div className="segmented"><button type="button" className={provider === "github" ? "active" : ""} onClick={() => { setProvider("github"); setAccessibleRepos([]); if (repoUrl.includes("gitlab")) setRepoUrl(""); }}>GitHub</button><button type="button" className={provider === "gitlab" ? "active" : ""} onClick={() => { setProvider("gitlab"); setAccessibleRepos([]); if (repoUrl.includes("github")) setRepoUrl(""); }}>GitLab</button></div>
             <div className="provider-connect"><button className="button subtle full" type="button" disabled={authBusy} onClick={() => connectGitProvider(provider)}>{authBusy ? "Redirecting…" : "Connect " + (provider === "github" ? "GitHub" : "GitLab") + " account"}</button><button className="button subtle full" type="button" disabled={loading || !token.trim()} onClick={loadAccessibleRepositories}>{loading ? "Loading…" : "Load repositories I can access"}</button>{accessibleRepos.length > 0 && <><label htmlFor="accessible-repos">Accessible repositories</label><select id="accessible-repos" defaultValue="" onChange={event => chooseAccessibleRepository(event.target.value)}><option value="" disabled>Choose a repository…</option>{accessibleRepos.map(item => <option key={item.label} value={item.label}>{item.label}</option>)}</select></>}</div>
@@ -546,12 +678,12 @@ export default function App() {
         <section className="editor-main">
           <div className="editor-toolbar">
             <div className="breadcrumbs"><span>Pages</span><span>›</span><b>{currentFile?.path || "Choose a page"}</b>{dirty && <span className="unsaved-dot" title="Unsaved changes" />}</div>
-            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={downloadHtml} disabled={!currentFile}>↓ Export</button></div>
+            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={downloadBackup} disabled={!originalFile} title="Download original unedited file">Backup</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button><button className="button subtle small" onClick={downloadHtml} disabled={!currentFile}>↓ Export</button></div>
           </div>
           <div className="canvas-area">
             {previewSrc ? <div className={`preview-device ${viewport}`}><div className="preview-browser"><div className="browser-dots"><i/><i/><i/></div><div className="browser-url">{repo?.owner}/{repo?.name}/{currentFile?.path}</div><span className="browser-lock">⌁</span></div><iframe ref={frameRef} title="Isolated website preview" className="preview-frame" sandbox="allow-scripts allow-forms allow-popups" srcDoc={previewSrc} /></div>
               : currentFile ? <div className="source-editor-panel"><div className="source-editor-heading"><div><b>Source file editor</b><small>{currentFile.path} · {inferFramework(files)}</small></div><span className="element-badge">SOURCE MODE</span></div><p>HTML pages use visual preview. This file is editable as source; framework-aware JSX visual preview is a separate adapter still in progress.</p><textarea className="source-editor" spellCheck={false} value={currentFile.content} onChange={e => { setCurrentFile({ ...currentFile, content: e.target.value }); setDirty(true); }} /></div>
-              : <div className="empty-canvas"><div className="empty-illustration"><div className="mock-window"><div className="mock-top"><i/><i/><i/></div><div className="mock-layout"><div/><div/><div/><div/></div></div><span className="mock-cursor">↖</span></div><h2>Make changes to the site you already have.</h2><p>Connect a Git repository, choose an HTML page, then click any element in the preview to edit it. No new headers or generated layouts.</p><button className="button primary" onClick={() => setShowConnect(true)}>Connect a repository</button><div className="feature-pills"><span>✦ Content edits</span><span>▧ Section clone / remove</span><span>⌘ Git commits</span></div></div>}
+              : <div className="empty-canvas"><div className="empty-illustration"><div className="mock-window"><div className="mock-top"><i/><i/><i/></div><div className="mock-layout"><div/><div/><div/><div/></div></div><span className="mock-cursor">↖</span></div><h2>Choose a starting point for your website.</h2><p>Existing website: select an HTML page from the file list. New alternative: start from one of these six editable layouts. Your current website stays untouched until you commit.</p>{repo && <div className="starter-grid">{starterTemplates.map(template => <button key={template.id} className="starter-card" onClick={() => startFromTemplate(template)}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div>}<p>Connect a Git repository, choose an HTML page, then click any element in the preview to edit it. No new headers or generated layouts.</p><button className="button primary" onClick={() => { setShowConnect(true); connectFormRef.current?.requestSubmit(); }}>Connect a repository</button><div className="feature-pills"><span>✦ Content edits</span><span>▧ Section clone / remove</span><span>⌘ Git commits</span></div></div>}
           </div>
           <div className="statusbar"><span className="status-ready"><i/> Preview sandbox</span><span>{repo ? inferFramework(files) : "Waiting for project"}</span><span>{currentFile ? currentFile.path : "No page selected"}</span><span className={dirty ? "changes-pending" : ""}>{dirty ? "● Unsaved changes" : "✓ No pending changes"}</span></div>
         </section>
@@ -566,7 +698,7 @@ export default function App() {
                 {["a","img","source","video","audio"].includes(selected.tag) && <><label htmlFor="prop-link">{selected.tag === "img" ? "Image source URL" : "Link / source URL"}</label><input id="prop-link" value={selected.tag === "img" ? selected.src : selected.href} onChange={e => applyPatch(selected.tag === "img" ? { src: e.target.value } : { href: e.target.value })} placeholder="https://…" />{selected.tag === "img" && <><label htmlFor="prop-alt">Alternative text</label><input id="prop-alt" value={selected.alt} onChange={e => applyPatch({ alt: e.target.value })} /><label htmlFor="prop-image-upload">Replace image file</label><input id="prop-image-upload" type="file" accept="image/*" disabled={!repo || loading} onChange={e => { stageImageReplacement(e.target.files?.[0]); e.currentTarget.value = ""; }} /><p className="helper">{stagedAssets.length ? stagedAssets.length + " image file(s) staged for the next Git save." : "Choose an image to preview it now; it will be uploaded into assets/ when you save changes."}</p></>}</>}
               </section>
               <section className="property-section"><h4>APPEARANCE</h4><div className="field-row"><div><label htmlFor="prop-color">Text color</label><input id="prop-color" value={selected.color} onChange={e => applyPatch({ color: e.target.value })} placeholder="#222 or CSS" /></div><div><label htmlFor="prop-bg">Background</label><input id="prop-bg" value={selected.backgroundColor} onChange={e => applyPatch({ backgroundColor: e.target.value })} placeholder="#fff or CSS" /></div></div><div className="field-row"><div><label htmlFor="prop-font">Font size</label><input id="prop-font" value={selected.fontSize} onChange={e => applyPatch({ fontSize: e.target.value })} placeholder="16px" /></div><div><label htmlFor="prop-width">Width</label><input id="prop-width" value={selected.width} onChange={e => applyPatch({ width: e.target.value })} placeholder="100% / auto" /></div></div><div className="field-row"><div><label htmlFor="prop-margin">Margin</label><input id="prop-margin" value={selected.margin} onChange={e => applyPatch({ margin: e.target.value })} placeholder="16px 0" /></div><div><label htmlFor="prop-padding">Padding</label><input id="prop-padding" value={selected.padding} onChange={e => applyPatch({ padding: e.target.value })} placeholder="12px" /></div></div><label htmlFor="prop-align">Text alignment</label><select id="prop-align" value={selected.textAlign} onChange={e => applyPatch({ textAlign: e.target.value })}><option value="">Theme default</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option><option value="justify">Justify</option></select></section>
-              <section className="property-section"><h4>SECTION ACTIONS</h4><p className="helper">These actions affect the selected element and its nested content.</p><div className="action-row"><button className="button subtle" onClick={() => { frameRef.current?.contentWindow?.postMessage({ type: "ve-move-up" }, "*"); setDirty(true); }}>↑ Move up</button><button className="button subtle" onClick={() => { frameRef.current?.contentWindow?.postMessage({ type: "ve-move-down" }, "*"); setDirty(true); }}>↓ Move down</button></div><div className="action-row section-actions"><button className="button subtle" onClick={() => { frameRef.current?.contentWindow?.postMessage({ type: "ve-duplicate" }, "*"); setDirty(true); }}>▢ Clone</button><button className="button danger" onClick={() => { if (window.confirm("Remove this element from the page preview? This change is not committed until you save it.")) { frameRef.current?.contentWindow?.postMessage({ type: "ve-remove" }, "*"); setSelected(emptyElement); setDirty(true); } }}>⌫ Remove</button></div></section>
+              <section className="property-section"><h4>SECTION ACTIONS</h4><p className="helper">These actions affect the selected element and its nested content.</p><div className="action-row"><button className="button subtle" onClick={() => { recordUndo(); frameRef.current?.contentWindow?.postMessage({ type: "ve-move-up" }, "*"); setDirty(true); }}>↑ Move up</button><button className="button subtle" onClick={() => { recordUndo(); frameRef.current?.contentWindow?.postMessage({ type: "ve-move-down" }, "*"); setDirty(true); }}>↓ Move down</button></div><div className="action-row section-actions"><button className="button subtle" onClick={() => { recordUndo(); frameRef.current?.contentWindow?.postMessage({ type: "ve-duplicate" }, "*"); setDirty(true); }}>▢ Clone</button><button className="button danger" onClick={() => { if (window.confirm("Remove this element from the page preview? This change is not committed until you save it.")) { recordUndo(); frameRef.current?.contentWindow?.postMessage({ type: "ve-remove" }, "*"); setSelected(emptyElement); setDirty(true); } }}>⌫ Remove</button></div></section>
             </>}
             <div className="panel-save"><button className="button primary full" disabled={loading || !currentFile || !user} onClick={saveDraft}>{loading ? "Saving…" : "▣ Save draft to database"}</button><small>{user ? "Saves a version snapshot to your private workspace." : "Sign in below to enable database drafts."}</small><button className="button subtle full" disabled={loading || !currentFile} onClick={saveToGit}>↥ Commit changes to Git</button></div>
           </div>
