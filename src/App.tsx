@@ -412,8 +412,8 @@ export default function App() {
         }
       }
       if (!/\.html?$/i.test(path)) {
-        setCurrentFile(file); setOriginalFile(file); setFrameHtml(""); setSelected(emptyElement);
-        setNotice({ kind: "info", text: "This source file is loaded. Direct visual preview is available for HTML files; CSS/JS/JSX source editing will be added through framework-aware editing." });
+        setNotice({ kind: "error", text: "Customer mode only supports visual editing of HTML pages. Source files cannot be opened here." });
+        return;
       } else {
         setCurrentFile(file); setOriginalFile(file); setFrameHtml(buildPreview(file.content, repo, path)); setSelected(emptyElement); setDirty(false);
         setNotice({ kind: "ok", text: `Loaded ${path} in isolated preview. Select an element to edit its properties.` });
@@ -494,18 +494,6 @@ export default function App() {
     setSelected(emptyElement);
     setDirty(true);
     setNotice({ kind: "info", text: direction === "undo" ? "Last visual change undone. Save or push when ready." : "Change restored. Save or push when ready." });
-  }
-
-  function downloadBackup() {
-    if (!originalFile) return;
-    const blob = new Blob([originalFile.content], { type: /\\.html?$/i.test(originalFile.path) ? "text/html;charset=utf-8" : "text/plain;charset=utf-8" });
-    const url = URL.createObjectURL(blob);
-    const anchor = document.createElement("a");
-    anchor.href = url;
-    anchor.download = (originalFile.path.split("/").pop() || "website-file") + ".backup";
-    anchor.click();
-    window.setTimeout(() => URL.revokeObjectURL(url), 1000);
-    setNotice({ kind: "ok", text: "Original repository version downloaded as a backup. It remains unchanged until you commit." });
   }
 
   function openSeparatePreview() {
@@ -628,7 +616,7 @@ export default function App() {
   }
 
   return (
-    <div className="app-shell">
+    <div className="app-shell"><style>{".app-shell{height:auto!important;min-height:100vh!important;overflow:visible!important}.workspace{height:auto!important;min-height:calc(100vh - 70px)!important;overflow:visible!important;align-items:stretch!important}.left-rail,.editor-main,.right-panel{height:auto!important;max-height:none!important;overflow:visible!important}.canvas-area{min-height:65vh!important;overflow:visible!important}.editor-main{min-height:100vh!important}.preview-device,.preview-frame{min-height:70vh!important}@media(max-width:700px){.workspace{display:flex!important;flex-direction:column!important}}"} </style>
       <header className="topbar">
         <a className="brand" href="#" aria-label="Site Visual Editor home"><span className="brand-mark">SV</span><span>site<span className="brand-light">visual</span><small>GIT WORKSPACE</small></span></a>
         <div className="topbar-center"><span className="status-dot" /> Visual Website Editor <span className="topbar-separator">/</span> <span className="muted">{repo ? `${repo.owner}/${repo.name}` : "No repository connected"}</span></div>
@@ -663,7 +651,7 @@ export default function App() {
         <section className="editor-main">
           <div className="editor-toolbar">
             <div className="breadcrumbs"><span>Pages</span><span>›</span><b>{currentFile?.path || "Choose a page"}</b>{dirty && <span className="unsaved-dot" title="Unsaved changes" />}</div>
-            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={downloadBackup} disabled={!originalFile} title="Download original unedited file">Backup</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button>{/* Source-code export is intentionally not exposed in customer mode. */}</div>
+            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button>{/* Source-code export is intentionally not exposed in customer mode. */}</div>
           </div>
           <div className="canvas-area">
             {previewSrc ? <div className={`preview-device ${viewport}`}><div className="preview-browser"><div className="browser-dots"><i/><i/><i/></div><div className="browser-url">{repo?.owner}/{repo?.name}/{currentFile?.path}</div><span className="browser-lock">⌁</span></div><iframe ref={frameRef} title="Isolated website preview" className="preview-frame" sandbox="allow-scripts allow-forms allow-popups" srcDoc={previewSrc} /></div>
