@@ -56,7 +56,7 @@ const runtime = `
 </script>`;
 
 const emptyElement: SelectedElement = { id: "", tag: "", text: "", href: "", src: "", alt: "", color: "", backgroundColor: "", fontSize: "", margin: "", padding: "", width: "", textAlign: "" };
-const editableExtensions = /\.(html?|css|js|jsx|ts|tsx|json|svg)$/i;
+const editableExtensions = /\.html?$/i;
 
 type StarterTemplate = { id: string; title: string; description: string; accent: string; heading: string; subheading: string; sections: string[] };
 const starterTemplates: StarterTemplate[] = [
@@ -360,14 +360,13 @@ export default function App() {
       setSavedProjectId(projectId);
       setRepo(parsed);
       setFiles(list);
-      setCurrentFile(null);
-      setOriginalFile(null);
-      setFrameHtml("");
+      const hasStarterDraft = Boolean(currentFile?.path.startsWith("vadix-starters/") && originalFile?.content === "");
+      if (!hasStarterDraft) { setCurrentFile(null); setOriginalFile(null); setFrameHtml(""); setDirty(false); }
+      else { setOriginalFile({ path: currentFile!.path, content: "" }); setFrameHtml(buildPreview(currentFile!.content, parsed, currentFile!.path)); setDirty(true); }
       setSelected(emptyElement);
-      setDirty(false);
       setNotice({
         kind: persistenceWarning ? "info" : "ok",
-        text: "Connected to " + parsed.owner + "/" + parsed.name + ". Found " + list.length + " files. Select an HTML or source file from the left to edit." + persistenceWarning
+        text: "Connected to " + parsed.owner + "/" + parsed.name + ". Found " + list.filter(file => editableExtensions.test(file.path)).length + " visual HTML pages. Source-code files are hidden from the customer editor." + persistenceWarning
       });
       setShowConnect(false);
     } catch (error) {
@@ -377,21 +376,17 @@ export default function App() {
   }
 
   function startFromTemplate(template: StarterTemplate) {
-    if (!repo) {
-      setNotice({ kind: "info", text: "Connect the customer's Git repository first. The starter template will be created only inside that selected repository." });
-      setShowConnect(true);
-      return;
-    }
-    const path = (repo.root ? repo.root + "/" : "") + "vadix-starters/" + template.id + "/index.html";
+    const path = (repo?.root ? repo.root + "/" : "") + "vadix-starters/" + template.id + "/index.html";
     const file: LoadedFile = { path, content: buildStarterHtml(template) };
     setCurrentFile(file);
     setOriginalFile({ path, content: "" });
-    setFrameHtml(buildPreview(file.content, repo, path));
+    const previewRepo = repo || { provider: "github" as GitProvider, owner: "template-preview", name: "draft", branch: "main", root: "" };
+    setFrameHtml(buildPreview(file.content, previewRepo, path));
     setSelected(emptyElement);
     setDirty(true);
     undoHistory.current = [];
     redoHistory.current = [];
-    setNotice({ kind: "info", text: template.title + " starter opened as a draft. Customize it in the visual editor; Git push creates a new file without overwriting the customer's existing website." });
+    setNotice({ kind: "info", text: template.title + " draft opened. Edit its visible content now. Connect the customer's Git repository before pushing the new page." });
   }
 
   async function openFile(path: string) {
@@ -526,31 +521,21 @@ export default function App() {
   }
 
   async function saveDraft() {
-    if (!repo || !currentFile) return setNotice({ kind: "error", text: "Connect a repository and open an HTML page first." });
-    if (!user) return setNotice({ kind: "error", text: "Sign in with your account to save drafts to the database." });
-    setLoading(true);
+    if (!repo || !currentFile || !user) return setNotice({ kind: "error", text: "Sign in and open a website page before saving a draft." });
     try {
-      const content = /\.html?$/i.test(currentFile.path) ? await requestEditedHtml() : currentFile.content;
-      let projectId = savedProjectId;
-      const projectPayload = { owner_id: user.id, name: `${repo.owner}/${repo.name}`, provider: repo.provider, repository_owner: repo.owner, repository_name: repo.name, default_branch: repo.branch, project_root: repo.root || "/", framework: inferFramework(files), settings: { lastOpenedFile: currentFile.path, editor: "visual" }, updated_at: new Date().toISOString() };
-      if (projectId) {
-        const { error } = await supabase.from("visual_editor_projects").update(projectPayload).eq("id", projectId);
-        if (error) throw error;
-      } else {
-        const { data, error } = await supabase.from("visual_editor_projects").insert(projectPayload).select("id").single();
-        if (error) throw error;
-        projectId = data.id; setSavedProjectId(projectId);
-      }
-      const { error: revisionError } = await supabase.from("visual_editor_revisions").insert({ project_id: projectId, owner_id: user.id, label: `Draft · ${currentFile.path}`, status: "draft", snapshot: { path: currentFile.path, content, selectedElement: selected, savedAt: new Date().toISOString() }, changed_files: dirty ? [currentFile.path] : [] });
-      if (revisionError) throw revisionError;
-      setNotice({ kind: "ok", text: "Draft snapshot saved to the database." });
+      const content = await requestEditedHtml();
+      const key = "vadix:draft:" + user.id + ":" + repo.owner + "/" + repo.name + ":" + repo.branch + ":" + currentFile.path;
+      localStorage.setItem(key, JSON.stringify({ path: currentFile.path, content, savedAt: new Date().toISOString() }));
+      setCurrentFile(file => file ? { ...file, content } : file);
+      setDirty(true);
+      setNotice({ kind: "ok", text: "Draft saved privately in this browser for your signed-in account. Review Preview, then use Push to Git when ready." });
     } catch (error) {
-      setNotice({ kind: "error", text: error instanceof Error ? error.message : "Database save failed. Check sign-in and database configuration." });
-    } finally { setLoading(false); }
+      setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not save the local draft." });
+    }
   }
 
   async function saveToGit() {
-    if (!repo || !currentFile || !originalFile) return setNotice({ kind: "error", text: "Connect a repository and open an HTML page first." });
+    if (!repo || !currentFile || !originalFile || !/\.html?$/i.test(currentFile.path)) return setNotice({ kind: "error", text: "Connect your website repository and select a visual HTML page first." });
     setLoading(true);
     let gitCommitted = false;
     try {
@@ -646,7 +631,7 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <a className="brand" href="#" aria-label="Site Visual Editor home"><span className="brand-mark">SV</span><span>site<span className="brand-light">visual</span><small>GIT WORKSPACE</small></span></a>
-        <div className="topbar-center"><span className="status-dot" /> Existing website editor <span className="topbar-separator">/</span> <span className="muted">{repo ? `${repo.owner}/${repo.name}` : "No repository connected"}</span></div>
+        <div className="topbar-center"><span className="status-dot" /> Visual Website Editor <span className="topbar-separator">/</span> <span className="muted">{repo ? `${repo.owner}/${repo.name}` : "No repository connected"}</span></div>
         <div className="topbar-actions">
           {user ? <ZenVentoraAccountMenu user={user} /> : <button className="button subtle small" onClick={() => document.getElementById("account-panel")?.scrollIntoView({ behavior: "smooth", block: "center" })}>ZenVentora account</button>}
           <button className="button primary small" disabled={loading || !currentFile} onClick={saveToGit}>{loading ? "Working…" : "Save Changes · Push to Git"}</button>
@@ -662,8 +647,8 @@ export default function App() {
             <div className="provider-connect"><button className="button subtle full" type="button" disabled={authBusy} onClick={() => connectGitProvider(provider)}>{authBusy ? "Redirecting…" : "Connect " + (provider === "github" ? "GitHub" : "GitLab") + " account"}</button><button className="button subtle full" type="button" disabled={loading || !token.trim()} onClick={loadAccessibleRepositories}>{loading ? "Loading…" : "Load repositories I can access"}</button>{accessibleRepos.length > 0 && <><label htmlFor="accessible-repos">Accessible repositories</label><select id="accessible-repos" defaultValue="" onChange={event => chooseAccessibleRepository(event.target.value)}><option value="" disabled>Choose a repository…</option>{accessibleRepos.map(item => <option key={item.label} value={item.label}>{item.label}</option>)}</select></>}</div>
             <label htmlFor="repo-url">Repository URL</label><input id="repo-url" value={repoUrl} onChange={e => setRepoUrl(e.target.value)} placeholder={provider === "github" ? "https://github.com/org/site" : "https://gitlab.com/group/site"} required />
             <div className="field-row"><div><label htmlFor="branch">Branch</label><input id="branch" value={branch} onChange={e => setBranch(e.target.value)} placeholder="main" required /></div><div><label htmlFor="root">Folder (optional)</label><input id="root" value={root} onChange={e => setRoot(e.target.value)} placeholder="/" /></div></div>
-            <label htmlFor="git-token">Access token <span className="label-hint">memory only</span></label><input id="git-token" type="password" value={token} onChange={e => setToken(e.target.value)} placeholder={token ? "Provider session connected" : "Optional fallback: paste repository token"} autoComplete="off" />
-            <p className="helper">Prefer provider sign-in and repository selection. Git credentials are not written to the visual-editor project or revision tables.</p>
+            {/* Git provider token is acquired through OAuth and is never manually exposed in the customer UI. */}
+            <p className="helper">Connect your GitHub/GitLab account above. VADIX uses the provider authorization session; no token needs to be pasted or managed here. Select a repository available to your connected Git account.</p>
             <button className="button primary full" type="submit" disabled={loading}>{loading ? "Connecting…" : "Connect repository →"}</button>
           </form>}
           <div className="files-heading"><span>FILES</span><span className="count">{visibleFiles.length}</span></div>
@@ -678,29 +663,29 @@ export default function App() {
         <section className="editor-main">
           <div className="editor-toolbar">
             <div className="breadcrumbs"><span>Pages</span><span>›</span><b>{currentFile?.path || "Choose a page"}</b>{dirty && <span className="unsaved-dot" title="Unsaved changes" />}</div>
-            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={downloadBackup} disabled={!originalFile} title="Download original unedited file">Backup</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button><button className="button subtle small" onClick={downloadHtml} disabled={!currentFile}>↓ Export</button></div>
+            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={downloadBackup} disabled={!originalFile} title="Download original unedited file">Backup</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button>{/* Source-code export is intentionally not exposed in customer mode. */}</div>
           </div>
           <div className="canvas-area">
             {previewSrc ? <div className={`preview-device ${viewport}`}><div className="preview-browser"><div className="browser-dots"><i/><i/><i/></div><div className="browser-url">{repo?.owner}/{repo?.name}/{currentFile?.path}</div><span className="browser-lock">⌁</span></div><iframe ref={frameRef} title="Isolated website preview" className="preview-frame" sandbox="allow-scripts allow-forms allow-popups" srcDoc={previewSrc} /></div>
               : currentFile ? <div className="source-editor-panel"><div className="source-editor-heading"><div><b>Source file editor</b><small>{currentFile.path} · {inferFramework(files)}</small></div><span className="element-badge">SOURCE MODE</span></div><p>HTML pages use visual preview. This file is editable as source; framework-aware JSX visual preview is a separate adapter still in progress.</p><textarea className="source-editor" spellCheck={false} value={currentFile.content} onChange={e => { setCurrentFile({ ...currentFile, content: e.target.value }); setDirty(true); }} /></div>
-              : <div className="empty-canvas"><div className="empty-illustration"><div className="mock-window"><div className="mock-top"><i/><i/><i/></div><div className="mock-layout"><div/><div/><div/><div/></div></div><span className="mock-cursor">↖</span></div><h2>Choose a starting point for your website.</h2><p>Existing website: select an HTML page from the file list. New alternative: start from one of these six editable layouts. Your current website stays untouched until you commit.</p>{repo && <div className="starter-grid">{starterTemplates.map(template => <button key={template.id} className="starter-card" onClick={() => startFromTemplate(template)}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div>}<p>Connect a Git repository, choose an HTML page, then click any element in the preview to edit it. No new headers or generated layouts.</p><button className="button primary" onClick={() => { setShowConnect(true); connectFormRef.current?.requestSubmit(); }}>Connect a repository</button><div className="feature-pills"><span>✦ Content edits</span><span>▧ Section clone / remove</span><span>⌘ Git commits</span></div></div>}
+              : <div className="empty-canvas"><div className="empty-illustration"><div className="mock-window"><div className="mock-top"><i/><i/><i/></div><div className="mock-layout"><div/><div/><div/><div/></div></div><span className="mock-cursor">↖</span></div><h2>Choose a starting point for your website.</h2><p>Existing website: select an HTML page from the file list. New alternative: start from one of these six editable layouts. Your current website stays untouched until you commit.</p><div className="starter-grid">{starterTemplates.map(template => <button key={template.id} className="starter-card" onClick={() => startFromTemplate(template)}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div><p>Connect a Git repository, choose an HTML page, then click any element in the preview to edit it. No new headers or generated layouts.</p><button className="button primary" onClick={() => { setShowConnect(true); connectFormRef.current?.requestSubmit(); }}>Connect a repository</button><div className="feature-pills"><span>✦ Content edits</span><span>▧ Section clone / remove</span><span>⌘ Git commits</span></div></div>}
           </div>
           <div className="statusbar"><span className="status-ready"><i/> Preview sandbox</span><span>{repo ? inferFramework(files) : "Waiting for project"}</span><span>{currentFile ? currentFile.path : "No page selected"}</span><span className={dirty ? "changes-pending" : ""}>{dirty ? "● Unsaved changes" : "✓ No pending changes"}</span></div>
         </section>
 
         <aside className="right-panel">
-          <div className="panel-tabs"><button className="active">Properties</button><button onClick={() => setNotice({ kind: "info", text: "Section operations are available for the selected preview element." })}>Structure</button></div>
+          <div className="panel-tabs"><button className="active">Edit content & design</button></div>
           <div className="panel-content">
             {showLinks && <section className="link-finder"><div className="link-finder-heading"><h4>LINKS IN THIS PAGE</h4><button className="icon-button" onClick={() => setShowLinks(false)} title="Close link finder">×</button></div>{linkInventory.length ? linkInventory.map((link, index) => <button key={link.id || index} className="link-result" onClick={() => frameRef.current?.contentWindow?.postMessage({ type: "ve-select-id", id: link.id }, "*")}><span>{link.text || "Untitled link"}</span><small title={link.href}>{link.href}</small></button>) : <p className="helper">No links found in this page, or the preview has not finished loading.</p>}</section>}
-            <div className="panel-title"><div><span className="eyebrow">SELECTED ELEMENT</span><h3>{selected.tag ? `<${selected.tag}>` : "Nothing selected"}</h3></div>{selected.tag && <span className="element-badge">{selected.tag.toUpperCase()}</span>}</div>
+            <div className="panel-title"><div><span className="eyebrow">SELECTED WEBSITE ITEM</span><h3>{selected.tag ? (selected.tag === "img" ? "Image" : selected.tag === "a" ? "Link / Button" : "Text or section") : "Nothing selected"}</h3></div></div>
             {!selected.tag ? <div className="select-hint"><div className="target-icon">⌖</div><b>Select an element</b><p>Click text, image, button or section in the preview to edit its existing attributes and styles.</p></div> : <>
               <section className="property-section"><h4>CONTENT</h4>{!["img","input","video","audio","source","br","hr"].includes(selected.tag) && <><label htmlFor="prop-text">Text content</label><textarea id="prop-text" rows={3} value={selected.text} onChange={e => applyPatch({ text: e.target.value })} /></>}
                 {["a","img","source","video","audio"].includes(selected.tag) && <><label htmlFor="prop-link">{selected.tag === "img" ? "Image source URL" : "Link / source URL"}</label><input id="prop-link" value={selected.tag === "img" ? selected.src : selected.href} onChange={e => applyPatch(selected.tag === "img" ? { src: e.target.value } : { href: e.target.value })} placeholder="https://…" />{selected.tag === "img" && <><label htmlFor="prop-alt">Alternative text</label><input id="prop-alt" value={selected.alt} onChange={e => applyPatch({ alt: e.target.value })} /><label htmlFor="prop-image-upload">Replace image file</label><input id="prop-image-upload" type="file" accept="image/*" disabled={!repo || loading} onChange={e => { stageImageReplacement(e.target.files?.[0]); e.currentTarget.value = ""; }} /><p className="helper">{stagedAssets.length ? stagedAssets.length + " image file(s) staged for the next Git save." : "Choose an image to preview it now; it will be uploaded into assets/ when you save changes."}</p></>}</>}
               </section>
-              <section className="property-section"><h4>APPEARANCE</h4><div className="field-row"><div><label htmlFor="prop-color">Text color</label><input id="prop-color" value={selected.color} onChange={e => applyPatch({ color: e.target.value })} placeholder="#222 or CSS" /></div><div><label htmlFor="prop-bg">Background</label><input id="prop-bg" value={selected.backgroundColor} onChange={e => applyPatch({ backgroundColor: e.target.value })} placeholder="#fff or CSS" /></div></div><div className="field-row"><div><label htmlFor="prop-font">Font size</label><input id="prop-font" value={selected.fontSize} onChange={e => applyPatch({ fontSize: e.target.value })} placeholder="16px" /></div><div><label htmlFor="prop-width">Width</label><input id="prop-width" value={selected.width} onChange={e => applyPatch({ width: e.target.value })} placeholder="100% / auto" /></div></div><div className="field-row"><div><label htmlFor="prop-margin">Margin</label><input id="prop-margin" value={selected.margin} onChange={e => applyPatch({ margin: e.target.value })} placeholder="16px 0" /></div><div><label htmlFor="prop-padding">Padding</label><input id="prop-padding" value={selected.padding} onChange={e => applyPatch({ padding: e.target.value })} placeholder="12px" /></div></div><label htmlFor="prop-align">Text alignment</label><select id="prop-align" value={selected.textAlign} onChange={e => applyPatch({ textAlign: e.target.value })}><option value="">Theme default</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option><option value="justify">Justify</option></select></section>
-              <section className="property-section"><h4>SECTION ACTIONS</h4><p className="helper">These actions affect the selected element and its nested content.</p><div className="action-row"><button className="button subtle" onClick={() => { recordUndo(); frameRef.current?.contentWindow?.postMessage({ type: "ve-move-up" }, "*"); setDirty(true); }}>↑ Move up</button><button className="button subtle" onClick={() => { recordUndo(); frameRef.current?.contentWindow?.postMessage({ type: "ve-move-down" }, "*"); setDirty(true); }}>↓ Move down</button></div><div className="action-row section-actions"><button className="button subtle" onClick={() => { recordUndo(); frameRef.current?.contentWindow?.postMessage({ type: "ve-duplicate" }, "*"); setDirty(true); }}>▢ Clone</button><button className="button danger" onClick={() => { if (window.confirm("Remove this element from the page preview? This change is not committed until you save it.")) { recordUndo(); frameRef.current?.contentWindow?.postMessage({ type: "ve-remove" }, "*"); setSelected(emptyElement); setDirty(true); } }}>⌫ Remove</button></div></section>
+              <section className="property-section"><h4>APPEARANCE</h4><div className="field-row"><div><label htmlFor="prop-color">Text color</label><input id="prop-color" value={selected.color} onChange={e => applyPatch({ color: e.target.value })} placeholder="#222 or CSS" /></div><div><label htmlFor="prop-bg">Background</label><input id="prop-bg" value={selected.backgroundColor} onChange={e => applyPatch({ backgroundColor: e.target.value })} placeholder="#fff or CSS" /></div></div><div className="field-row"><div><label htmlFor="prop-font">Font size</label><select id="prop-font" value={selected.fontSize || "inherit"} onChange={e => applyPatch({ fontSize: e.target.value === "inherit" ? "" : e.target.value })}><option value="inherit">Theme default</option>{[12,14,16,18,20,24,28,32,40,48,56,64,72].map(size => <option key={size} value={size + "px"}>{size}px</option>)}</select></div><div><label htmlFor="prop-width">Size</label><select id="prop-width" value={selected.width || "auto"} onChange={e => applyPatch({ width: e.target.value === "auto" ? "" : e.target.value })}><option value="auto">Original / auto</option><option value="25%">Small (25%)</option><option value="50%">Half (50%)</option><option value="75%">Large (75%)</option><option value="100%">Full width</option></select></div></div><div className="field-row"><div><label htmlFor="prop-margin">Margin</label><input id="prop-margin" value={selected.margin} onChange={e => applyPatch({ margin: e.target.value })} placeholder="16px 0" /></div><div><label htmlFor="prop-padding">Padding</label><input id="prop-padding" value={selected.padding} onChange={e => applyPatch({ padding: e.target.value })} placeholder="12px" /></div></div><label htmlFor="prop-align">Text alignment</label><select id="prop-align" value={selected.textAlign} onChange={e => applyPatch({ textAlign: e.target.value })}><option value="">Theme default</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option><option value="justify">Justify</option></select></section>
+              <section className="property-section"><h4>SAFE EDITING</h4><p className="helper">Only visible content, links, images and basic design settings are editable. Source-code editing and structural code controls are unavailable in the customer editor.</p></section>
             </>}
-            <div className="panel-save"><button className="button primary full" disabled={loading || !currentFile || !user} onClick={saveDraft}>{loading ? "Saving…" : "▣ Save draft to database"}</button><small>{user ? "Saves a version snapshot to your private workspace." : "Sign in below to enable database drafts."}</small><button className="button subtle full" disabled={loading || !currentFile} onClick={saveToGit}>↥ Commit changes to Git</button></div>
+            <div className="panel-save"><button className="button primary full" disabled={loading || !currentFile || !user} onClick={saveDraft}>{loading ? "Saving…" : "▣ Save draft to database"}</button><small>{user ? "Keeps a private draft in this browser until you push." : "Sign in to save your draft."}</small><button className="button subtle full" disabled={loading || !currentFile} onClick={saveToGit}>↥ Commit changes to Git</button></div>
           </div>
           <div id="account-panel" className="account-panel"><div className="account-title"><span className="database-icon">▤</span><div><b>ZenVentora account</b><small>{user ? "Account connected" : "Sign in to use VADIX"}</small></div></div>
             {user ? <div className="account-signed"><span className="account-check">✓</span><span>VADIX is connected to {user.email || "your ZenVentora account"}.</span><button className="button subtle small" onClick={() => getZenVentoraAccount().then(account => account.openAccount())}>Manage account ↗</button></div> : <div className="action-row"><button className="button subtle" onClick={() => getZenVentoraAccount().then(account => account.signIn("vadix", window.location.origin + "/"))}>Sign in</button><button className="button subtle" onClick={() => getZenVentoraAccount().then(account => account.signUp("vadix", window.location.origin + "/"))}>Create account</button></div>}
