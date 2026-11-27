@@ -167,6 +167,8 @@ export default function App() {
       setOnboardingDone(localStorage.getItem("vadix:onboarding-complete:" + user.id) === "1");
       const profile = JSON.parse(localStorage.getItem("vadix:customer-profile:" + user.id) || "{}");
       setBusinessDetails(current => ({...current,...profile}));
+      setWebsiteUrl(profile.websiteUrl || "");
+      setWebsiteMap(profile.websiteMap || "");
       setCustomerPath(localStorage.getItem("vadix:customer-path:" + user.id) as "new" | "existing" | null);
     } catch { setOnboardingDone(false); }
   }, [user?.id]);
@@ -655,7 +657,7 @@ export default function App() {
     const finishOnboarding = () => {
       try {
         localStorage.setItem("vadix:onboarding-complete:" + user.id, "1");
-        localStorage.setItem("vadix:customer-profile:" + user.id, JSON.stringify(businessDetails));
+        localStorage.setItem("vadix:customer-profile:" + user.id, JSON.stringify({...businessDetails, websiteUrl, websiteMap}));
         localStorage.setItem("vadix:customer-path:" + user.id, customerPath || "new");
       } catch {}
       setOnboardingDone(true);
@@ -678,7 +680,7 @@ export default function App() {
         <label style={{display:"block",textAlign:"left"}}>Website map / sitemap URL<input className="field-input" type="url" value={websiteMap} onChange={e=>setWebsiteMap(e.target.value)} placeholder="https://yourwebsite.com/sitemap.xml (optional)" /></label>
         <label style={{display:"block",textAlign:"left"}}>Website access token<input className="field-input" type="password" autoComplete="off" value={websiteToken} onChange={e=>setWebsiteToken(e.target.value)} placeholder="Optional — hidden while typing" /></label>
         <p className="helper">The token is only used for this session and is not saved in the customer profile. Git provider authorization is still required to push source changes.</p>
-        <div className="action-row" style={{justifyContent:"flex-end",marginTop:20}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button><button className="button primary" disabled={!/^https?:\/\//i.test(websiteUrl)} onClick={()=>{finishOnboarding();setRepoUrl("");setShowConnect(true);setNotice({kind:"info",text:"Website details recorded for this browser session. Connect the matching Git repository to load its editable HTML pages."});}}>Continue to connect →</button></div></>}
+        <div className="action-row" style={{justifyContent:"flex-end",marginTop:20}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button><button className="button primary" disabled={!/^https?:\/\//i.test(websiteUrl)} onClick={()=>{finishOnboarding();setToken(websiteToken);setRepoUrl("");setShowConnect(true);setNotice({kind:"info",text:"Website details saved. Token stays session-only. Connect the matching Git repository to load editable HTML pages."});}}>Continue to connect →</button></div></>}
       {onboardingStep === "templates" && <><h1>Choose your website template</h1><p>Pick a starter design. You can edit text, images, links and basic design, then save a draft and preview it. No Git token is needed for this template preview.</p>
         <div className="starter-grid" style={{gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))"}}>{starterTemplates.map(template=><button key={template.id} className="starter-card" onClick={()=>{finishOnboarding();startFromTemplate(template);}}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div>
         <div className="action-row" style={{justifyContent:"flex-start",marginTop:18}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button></div></>}
