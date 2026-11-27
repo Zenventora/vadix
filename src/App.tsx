@@ -360,11 +360,10 @@ export default function App() {
       setSavedProjectId(projectId);
       setRepo(parsed);
       setFiles(list);
-      setCurrentFile(null);
-      setOriginalFile(null);
-      setFrameHtml("");
+      const hasStarterDraft = Boolean(currentFile?.path.startsWith("vadix-starters/") && originalFile?.content === "");
+      if (!hasStarterDraft) { setCurrentFile(null); setOriginalFile(null); setFrameHtml(""); setDirty(false); }
+      else { setOriginalFile({ path: currentFile!.path, content: "" }); setFrameHtml(buildPreview(currentFile!.content, parsed, currentFile!.path)); setDirty(true); }
       setSelected(emptyElement);
-      setDirty(false);
       setNotice({
         kind: persistenceWarning ? "info" : "ok",
         text: "Connected to " + parsed.owner + "/" + parsed.name + ". Found " + list.filter(file => editableExtensions.test(file.path)).length + " visual HTML pages. Source-code files are hidden from the customer editor." + persistenceWarning
@@ -377,21 +376,17 @@ export default function App() {
   }
 
   function startFromTemplate(template: StarterTemplate) {
-    if (!repo) {
-      setNotice({ kind: "info", text: "Connect the customer's Git repository first. The starter template will be created only inside that selected repository." });
-      setShowConnect(true);
-      return;
-    }
-    const path = (repo.root ? repo.root + "/" : "") + "vadix-starters/" + template.id + "/index.html";
+    const path = (repo?.root ? repo.root + "/" : "") + "vadix-starters/" + template.id + "/index.html";
     const file: LoadedFile = { path, content: buildStarterHtml(template) };
     setCurrentFile(file);
     setOriginalFile({ path, content: "" });
-    setFrameHtml(buildPreview(file.content, repo, path));
+    const previewRepo = repo || { provider: "github" as GitProvider, owner: "template-preview", name: "draft", branch: "main", root: "" };
+    setFrameHtml(buildPreview(file.content, previewRepo, path));
     setSelected(emptyElement);
     setDirty(true);
     undoHistory.current = [];
     redoHistory.current = [];
-    setNotice({ kind: "info", text: template.title + " starter opened as a draft. Customize it in the visual editor; Git push creates a new file without overwriting the customer's existing website." });
+    setNotice({ kind: "info", text: template.title + " draft opened. Edit its visible content now. Connect the customer's Git repository before pushing the new page." });
   }
 
   async function openFile(path: string) {
@@ -636,7 +631,7 @@ export default function App() {
     <div className="app-shell">
       <header className="topbar">
         <a className="brand" href="#" aria-label="Site Visual Editor home"><span className="brand-mark">SV</span><span>site<span className="brand-light">visual</span><small>GIT WORKSPACE</small></span></a>
-        <div className="topbar-center"><span className="status-dot" /> Existing website editor <span className="topbar-separator">/</span> <span className="muted">{repo ? `${repo.owner}/${repo.name}` : "No repository connected"}</span></div>
+        <div className="topbar-center"><span className="status-dot" /> Visual Website Editor <span className="topbar-separator">/</span> <span className="muted">{repo ? `${repo.owner}/${repo.name}` : "No repository connected"}</span></div>
         <div className="topbar-actions">
           {user ? <ZenVentoraAccountMenu user={user} /> : <button className="button subtle small" onClick={() => document.getElementById("account-panel")?.scrollIntoView({ behavior: "smooth", block: "center" })}>ZenVentora account</button>}
           <button className="button primary small" disabled={loading || !currentFile} onClick={saveToGit}>{loading ? "Working…" : "Save Changes · Push to Git"}</button>
@@ -668,12 +663,12 @@ export default function App() {
         <section className="editor-main">
           <div className="editor-toolbar">
             <div className="breadcrumbs"><span>Pages</span><span>›</span><b>{currentFile?.path || "Choose a page"}</b>{dirty && <span className="unsaved-dot" title="Unsaved changes" />}</div>
-            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={downloadBackup} disabled={!originalFile} title="Download original unedited file">Backup</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button><button className="button subtle small" onClick={downloadHtml} disabled={!currentFile}>↓ Export</button></div>
+            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={downloadBackup} disabled={!originalFile} title="Download original unedited file">Backup</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button>{/* Source-code export is intentionally not exposed in customer mode. */}</div>
           </div>
           <div className="canvas-area">
             {previewSrc ? <div className={`preview-device ${viewport}`}><div className="preview-browser"><div className="browser-dots"><i/><i/><i/></div><div className="browser-url">{repo?.owner}/{repo?.name}/{currentFile?.path}</div><span className="browser-lock">⌁</span></div><iframe ref={frameRef} title="Isolated website preview" className="preview-frame" sandbox="allow-scripts allow-forms allow-popups" srcDoc={previewSrc} /></div>
               : currentFile ? <div className="source-editor-panel"><div className="source-editor-heading"><div><b>Source file editor</b><small>{currentFile.path} · {inferFramework(files)}</small></div><span className="element-badge">SOURCE MODE</span></div><p>HTML pages use visual preview. This file is editable as source; framework-aware JSX visual preview is a separate adapter still in progress.</p><textarea className="source-editor" spellCheck={false} value={currentFile.content} onChange={e => { setCurrentFile({ ...currentFile, content: e.target.value }); setDirty(true); }} /></div>
-              : <div className="empty-canvas"><div className="empty-illustration"><div className="mock-window"><div className="mock-top"><i/><i/><i/></div><div className="mock-layout"><div/><div/><div/><div/></div></div><span className="mock-cursor">↖</span></div><h2>Choose a starting point for your website.</h2><p>Existing website: select an HTML page from the file list. New alternative: start from one of these six editable layouts. Your current website stays untouched until you commit.</p>{repo && <div className="starter-grid">{starterTemplates.map(template => <button key={template.id} className="starter-card" onClick={() => startFromTemplate(template)}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div>}<p>Connect a Git repository, choose an HTML page, then click any element in the preview to edit it. No new headers or generated layouts.</p><button className="button primary" onClick={() => { setShowConnect(true); connectFormRef.current?.requestSubmit(); }}>Connect a repository</button><div className="feature-pills"><span>✦ Content edits</span><span>▧ Section clone / remove</span><span>⌘ Git commits</span></div></div>}
+              : <div className="empty-canvas"><div className="empty-illustration"><div className="mock-window"><div className="mock-top"><i/><i/><i/></div><div className="mock-layout"><div/><div/><div/><div/></div></div><span className="mock-cursor">↖</span></div><h2>Choose a starting point for your website.</h2><p>Existing website: select an HTML page from the file list. New alternative: start from one of these six editable layouts. Your current website stays untouched until you commit.</p><div className="starter-grid">{starterTemplates.map(template => <button key={template.id} className="starter-card" onClick={() => startFromTemplate(template)}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div><p>Connect a Git repository, choose an HTML page, then click any element in the preview to edit it. No new headers or generated layouts.</p><button className="button primary" onClick={() => { setShowConnect(true); connectFormRef.current?.requestSubmit(); }}>Connect a repository</button><div className="feature-pills"><span>✦ Content edits</span><span>▧ Section clone / remove</span><span>⌘ Git commits</span></div></div>}
           </div>
           <div className="statusbar"><span className="status-ready"><i/> Preview sandbox</span><span>{repo ? inferFramework(files) : "Waiting for project"}</span><span>{currentFile ? currentFile.path : "No page selected"}</span><span className={dirty ? "changes-pending" : ""}>{dirty ? "● Unsaved changes" : "✓ No pending changes"}</span></div>
         </section>
