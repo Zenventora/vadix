@@ -138,6 +138,10 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [user, setUser] = useState<any>(null);
   const [accountReady, setAccountReady] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<"details" | "website" | "templates" | "existing">("details");
+  const [onboardingDone, setOnboardingDone] = useState(false);
+  const [businessDetails, setBusinessDetails] = useState({ name: "", email: "", phone: "", tagline: "" });
+  const [websiteUrl, setWebsiteUrl] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<"monitor" | "desktop" | "tablet" | "mobile">("desktop");
@@ -612,6 +616,33 @@ export default function App() {
 
   if (!accountReady) {
     return <div className="zv-account-gate"><div className="zv-account-gate-card"><h1>Checking ZenVentora account…</h1><p>Verifying your common account session before opening VADIX.</p></div></div>;
+  }
+
+  if (user && !onboardingDone && !repo) {
+    const finishOnboarding = () => {
+      try { localStorage.setItem("vadix:onboarding-complete:" + user.id, "1"); } catch {}
+      setOnboardingDone(true);
+    };
+    return <div className="zv-account-gate"><div className="zv-account-gate-card" style={{maxWidth:760,width:"min(94vw,760px)"}}>
+      <div style={{fontSize:12,fontWeight:800,letterSpacing:2,color:"#64748b"}}>VADIX · CUSTOMER SETUP</div>
+      {onboardingStep === "details" && <><h1>Welcome to VADIX</h1><p>First, tell us a little about your business. You can update these details later.</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,textAlign:"left"}}>
+          <label>Business / customer name<input className="field-input" value={businessDetails.name} onChange={e=>setBusinessDetails({...businessDetails,name:e.target.value})} placeholder="Your business name" /></label>
+          <label>Business email<input className="field-input" type="email" value={businessDetails.email} onChange={e=>setBusinessDetails({...businessDetails,email:e.target.value})} placeholder="hello@example.com" /></label>
+          <label>Phone<input className="field-input" value={businessDetails.phone} onChange={e=>setBusinessDetails({...businessDetails,phone:e.target.value})} placeholder="+91…" /></label>
+          <label>Short tagline<input className="field-input" value={businessDetails.tagline} onChange={e=>setBusinessDetails({...businessDetails,tagline:e.target.value})} placeholder="What your business does" /></label>
+        </div>
+        <div className="action-row" style={{justifyContent:"flex-end",marginTop:20}}><button className="button primary" disabled={!businessDetails.name.trim()} onClick={()=>setOnboardingStep("website")}>Continue →</button></div></>}
+      {onboardingStep === "website" && <><h1>Do you already have a website?</h1><p>Choose the path that matches your business. We will only work with the website or project you connect to this account.</p>
+        <div className="action-row" style={{justifyContent:"center",gap:14,marginTop:24}}><button className="button primary" onClick={()=>setOnboardingStep("existing")}>Yes, I have a website</button><button className="button subtle" onClick={()=>setOnboardingStep("templates")}>No, create a new website</button></div>
+        <div className="action-row" style={{justifyContent:"flex-start",marginTop:22}}><button className="button subtle" onClick={()=>setOnboardingStep("details")}>← Back</button></div></>}
+      {onboardingStep === "existing" && <><h1>Connect your existing website</h1><p>Enter the public website URL and its source repository. Git provider authorization is required to edit and push changes.</p>
+        <label style={{display:"block",textAlign:"left",marginTop:14}}>Website URL<input className="field-input" type="url" value={websiteUrl} onChange={e=>setWebsiteUrl(e.target.value)} placeholder="https://yourwebsite.com" /></label>
+        <div className="action-row" style={{justifyContent:"flex-end",marginTop:20}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button><button className="button primary" disabled={!/^https?:\/\//i.test(websiteUrl)} onClick={()=>{finishOnboarding();setRepoUrl(websiteUrl);setShowConnect(true);setNotice({kind:"info",text:"Website URL noted. Connect the matching source repository and authorize Git access to load editable pages."});}}>Continue to connect →</button></div></>}
+      {onboardingStep === "templates" && <><h1>Choose your website template</h1><p>Pick a starter design. You can edit text, images, links and basic design, then save a draft and preview it. No Git token is needed for this template preview.</p>
+        <div className="starter-grid" style={{gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))"}}>{starterTemplates.map(template=><button key={template.id} className="starter-card" onClick={()=>{finishOnboarding();startFromTemplate(template);}}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div>
+        <div className="action-row" style={{justifyContent:"flex-start",marginTop:18}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button></div></>}
+    </div></div>;
   }
 
   if (!user) {
