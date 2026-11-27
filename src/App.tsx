@@ -515,7 +515,7 @@ export default function App() {
 
   function openSeparatePreview() {
     if (!previewSrc) return;
-    const previewWindow = window.open("", "_blank", "noopener,noreferrer");
+    const previewWindow = window.open("", "_blank");
     if (!previewWindow) {
       setNotice({ kind: "error", text: "Your browser blocked the preview window. Allow pop-ups for VADIX and try again." });
       return;
