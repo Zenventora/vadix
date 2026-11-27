@@ -155,6 +155,11 @@ export default function App() {
   const htmlResultResolve = useRef<((html: string) => void) | null>(null);
 
   useEffect(() => {
+    if (!user?.id) { setOnboardingDone(false); return; }
+    try { setOnboardingDone(localStorage.getItem("vadix:onboarding-complete:" + user.id) === "1"); } catch { setOnboardingDone(false); }
+  }, [user?.id]);
+
+  useEffect(() => {
     let active = true;
     let unsubscribeAccount = () => {};
 
@@ -380,6 +385,7 @@ export default function App() {
   }
 
   function startFromTemplate(template: StarterTemplate) {
+    setShowConnect(false);
     const path = (repo?.root ? repo.root + "/" : "") + "vadix-starters/" + template.id + "/index.html";
     const file: LoadedFile = { path, content: buildStarterHtml(template) };
     setCurrentFile(file);
