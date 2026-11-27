@@ -540,6 +540,8 @@ export default function App() {
       const key = repo ? "vadix:draft:" + user.id + ":" + repo.owner + "/" + repo.name + ":" + repo.branch + ":" + currentFile.path : "vadix:starter-draft:" + user.id + ":" + currentFile.path;
       localStorage.setItem(key, JSON.stringify({ path: currentFile.path, content, savedAt: new Date().toISOString() }));
       setCurrentFile(file => file ? { ...file, content } : file);
+      const previewRepository = repo || { provider: "github" as GitProvider, owner: "template-preview", name: "draft", branch: "main", root: "" };
+      setFrameHtml(buildPreview(content, previewRepository, currentFile.path));
       setDirty(true);
       if (!repo && currentFile.path.startsWith("vadix-starters/")) {
         setPreviewStage(true);
