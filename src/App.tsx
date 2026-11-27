@@ -67,6 +67,8 @@ const starterTemplates: StarterTemplate[] = [
   { id: "hospitality", title: "Hotel & Hospitality", description: "Stay, facilities and booking enquiry", accent: "#0e7490", heading: "Your next memorable stay.", subheading: "Present your property, rooms, amenities and guest experiences.", sections: ["Rooms & Suites", "Experiences", "Plan Your Stay"] },
   { id: "landing", title: "Product Landing Page", description: "One focused page for a service or launch", accent: "#be185d", heading: "Make your next move count.", subheading: "A focused landing page with a clear message and call to action.", sections: ["What You Get", "How It Works", "Get Started"] }
 ];
+function escapeCustomerHtml(value: string) { return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;"); }
+
 function buildStarterHtml(template: StarterTemplate) {
   const esc = (value: string) => value.replace(/[&<>"]/g, char => { const entities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"' : "&quot;" }; return entities[char] || char; });
   return `<!doctype html>
@@ -399,7 +401,12 @@ export default function App() {
     setPreviewStage(false);
     setEditorPanelOpen(true);
     const path = (repo?.root ? repo.root + "/" : "") + "vadix-starters/" + template.id + "/index.html";
-    const file: LoadedFile = { path, content: buildStarterHtml(template) };
+    const brand = escapeCustomerHtml(businessDetails.name.trim() || "Your Brand");
+    const email = escapeCustomerHtml(businessDetails.email.trim() || "hello@example.com");
+    const phone = escapeCustomerHtml(businessDetails.phone.trim() || "[Your phone]");
+    let html = buildStarterHtml(template).replaceAll("Your Brand", brand).replaceAll("hello@example.com", email).replaceAll("[Your phone]", phone);
+    if (businessDetails.tagline.trim()) html = html.replace(template.subheading, escapeCustomerHtml(businessDetails.tagline.trim()));
+    const file: LoadedFile = { path, content: html };
     setCurrentFile(file);
     setOriginalFile({ path, content: "" });
     const previewRepo = repo || { provider: "github" as GitProvider, owner: "template-preview", name: "draft", branch: "main", root: "" };
