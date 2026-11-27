@@ -505,7 +505,9 @@ export default function App() {
     }
     previewWindow.opener = null;
     previewWindow.document.open();
-    previewWindow.document.write(previewSrc);
+    const csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src https: data: blob:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'\">";
+    const safePreview = previewSrc.replace("<head", "<head" + csp);
+    previewWindow.document.write(safePreview);
     previewWindow.document.close();
   }
 
