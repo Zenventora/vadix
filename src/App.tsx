@@ -58,6 +58,28 @@ const runtime = `
 const emptyElement: SelectedElement = { id: "", tag: "", text: "", href: "", src: "", alt: "", color: "", backgroundColor: "", fontSize: "", margin: "", padding: "", width: "", textAlign: "" };
 const editableExtensions = /\.(html?|css|js|jsx|ts|tsx|json|svg)$/i;
 
+type StarterTemplate = { id: string; title: string; description: string; accent: string; heading: string; subheading: string; sections: string[] };
+const starterTemplates: StarterTemplate[] = [
+  { id: "business", title: "Business Website", description: "Services, company profile and contact", accent: "#2563eb", heading: "A business built on trust.", subheading: "Introduce your company, services and the people behind your work.", sections: ["Our Services", "Why Choose Us", "Contact Our Team"] },
+  { id: "commerce", title: "E-commerce", description: "Product catalogue and shopping sections", accent: "#0f766e", heading: "Good things, thoughtfully made.", subheading: "Showcase your products and make it easy for customers to discover them.", sections: ["Featured Products", "Shop by Category", "Shipping & Returns"] },
+  { id: "portfolio", title: "Portfolio", description: "Projects, skills and personal profile", accent: "#7c3aed", heading: "Selected work. Real impact.", subheading: "A clear portfolio to present your experience and best projects.", sections: ["Featured Projects", "About Me", "Let's Collaborate"] },
+  { id: "restaurant", title: "Restaurant & Food", description: "Menu, story and reservations", accent: "#b45309", heading: "Made fresh. Served with care.", subheading: "Share your menu, story, opening hours and location.", sections: ["Our Menu", "The Story", "Find Us"] },
+  { id: "hospitality", title: "Hotel & Hospitality", description: "Stay, facilities and booking enquiry", accent: "#0e7490", heading: "Your next memorable stay.", subheading: "Present your property, rooms, amenities and guest experiences.", sections: ["Rooms & Suites", "Experiences", "Plan Your Stay"] },
+  { id: "landing", title: "Product Landing Page", description: "One focused page for a service or launch", accent: "#be185d", heading: "Make your next move count.", subheading: "A focused landing page with a clear message and call to action.", sections: ["What You Get", "How It Works", "Get Started"] }
+];
+function buildStarterHtml(template: StarterTemplate) {
+  const esc = (value: string) => value.replace(/[&<>"]/g, char => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[char] || char);
+  return `<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>${esc(template.title)} | Your Brand</title>
+<style>*{box-sizing:border-box}body{margin:0;font-family:Inter,Arial,sans-serif;color:#172033;background:#fff}header{display:flex;justify-content:space-between;align-items:center;padding:22px max(6vw,24px);border-bottom:1px solid #edf0f5}header strong{font-size:20px;color:${template.accent}}nav a{margin-left:22px;color:#475569;text-decoration:none;font-size:14px}.hero{padding:100px 7vw 85px;background:linear-gradient(135deg,#f8fafc,#eef2ff)}.hero small{color:${template.accent};font-weight:700;letter-spacing:2px;text-transform:uppercase}.hero h1{font-size:clamp(38px,6vw,72px);line-height:1.05;max-width:850px;margin:22px 0}.hero p{font-size:19px;line-height:1.7;color:#64748b;max-width:650px}.cta{display:inline-block;background:${template.accent};color:white;padding:14px 24px;border-radius:8px;text-decoration:none;margin-top:18px}.section{padding:70px 7vw}.section h2{font-size:34px}.cards{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:20px}.card{padding:28px;border:1px solid #e5eaf1;border-radius:14px;background:#fff;min-height:140px}.card h3{margin-top:0}.card p{color:#64748b;line-height:1.6}footer{padding:30px 7vw;background:#111827;color:#cbd5e1}@media(max-width:650px){header{padding:18px 5vw}nav a{margin-left:10px;font-size:12px}.hero{padding:65px 5vw}.section{padding:48px 5vw}.cards{grid-template-columns:1fr}}</style></head>
+<body><header><strong data-brand>Your Brand</strong><nav><a href="#about">About</a><a href="#services">Services</a><a href="#contact">Contact</a></nav></header>
+<main><section class="hero"><small>${esc(template.title)}</small><h1>${esc(template.heading)}</h1><p>${esc(template.subheading)}</p><a class="cta" href="#contact">Let's Talk</a></section>
+<section class="section" id="about"><h2>Welcome to Your Brand</h2><p>Replace this introduction with your business details, story and value proposition.</p></section>
+<section class="section" id="services"><div class="cards">${template.sections.map((section, index) => `<article class="card"><h3>${esc(section)}</h3><p>Add your content, image and details here. Select this element in VADIX to edit it.</p></article>`).join("")}</div></section>
+<section class="section" id="contact"><h2>Let's connect</h2><p>Phone: [Your phone] · Email: [Your email] · Address: [Your business address]</p><a class="cta" href="mailto:hello@example.com">Contact Us</a></section></main><footer>© <span data-year>${new Date().getFullYear()}</span> Your Brand · All rights reserved</footer></body></html>`;
+}
+
+
 function ZenVentoraAccountMenu({ user }: { user: any }) {
   const [open, setOpen] = useState(false);
   const name = user?.user_metadata?.full_name || user?.user_metadata?.name || user?.email?.split("@")[0] || "ZenVentora account";
@@ -354,6 +376,24 @@ export default function App() {
     } finally { setLoading(false); }
   }
 
+  function startFromTemplate(template: StarterTemplate) {
+    if (!repo) {
+      setNotice({ kind: "info", text: "Connect the customer's Git repository first. The starter template will be created only inside that selected repository." });
+      setShowConnect(true);
+      return;
+    }
+    const path = (repo.root ? repo.root + "/" : "") + "vadix-starters/" + template.id + "/index.html";
+    const file: LoadedFile = { path, content: buildStarterHtml(template) };
+    setCurrentFile(file);
+    setOriginalFile({ path, content: "" });
+    setFrameHtml(buildPreview(file.content, repo, path));
+    setSelected(emptyElement);
+    setDirty(true);
+    undoHistory.current = [];
+    redoHistory.current = [];
+    setNotice({ kind: "info", text: template.title + " starter opened as a draft. Customize it in the visual editor; Git push creates a new file without overwriting the customer's existing website." });
+  }
+
   async function openFile(path: string) {
     if (!repo) return;
     setLoading(true);
@@ -643,7 +683,7 @@ export default function App() {
           <div className="canvas-area">
             {previewSrc ? <div className={`preview-device ${viewport}`}><div className="preview-browser"><div className="browser-dots"><i/><i/><i/></div><div className="browser-url">{repo?.owner}/{repo?.name}/{currentFile?.path}</div><span className="browser-lock">⌁</span></div><iframe ref={frameRef} title="Isolated website preview" className="preview-frame" sandbox="allow-scripts allow-forms allow-popups" srcDoc={previewSrc} /></div>
               : currentFile ? <div className="source-editor-panel"><div className="source-editor-heading"><div><b>Source file editor</b><small>{currentFile.path} · {inferFramework(files)}</small></div><span className="element-badge">SOURCE MODE</span></div><p>HTML pages use visual preview. This file is editable as source; framework-aware JSX visual preview is a separate adapter still in progress.</p><textarea className="source-editor" spellCheck={false} value={currentFile.content} onChange={e => { setCurrentFile({ ...currentFile, content: e.target.value }); setDirty(true); }} /></div>
-              : <div className="empty-canvas"><div className="empty-illustration"><div className="mock-window"><div className="mock-top"><i/><i/><i/></div><div className="mock-layout"><div/><div/><div/><div/></div></div><span className="mock-cursor">↖</span></div><h2>Make changes to the site you already have.</h2><p>Connect a Git repository, choose an HTML page, then click any element in the preview to edit it. No new headers or generated layouts.</p><button className="button primary" onClick={() => { setShowConnect(true); connectFormRef.current?.requestSubmit(); }}>Connect a repository</button><div className="feature-pills"><span>✦ Content edits</span><span>▧ Section clone / remove</span><span>⌘ Git commits</span></div></div>}
+              : <div className="empty-canvas"><div className="empty-illustration"><div className="mock-window"><div className="mock-top"><i/><i/><i/></div><div className="mock-layout"><div/><div/><div/><div/></div></div><span className="mock-cursor">↖</span></div><h2>Choose a starting point for your website.</h2><p>Existing website: select an HTML page from the file list. New alternative: start from one of these six editable layouts. Your current website stays untouched until you commit.</p>{repo && <div className="starter-grid">{starterTemplates.map(template => <button key={template.id} className="starter-card" onClick={() => startFromTemplate(template)}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div>}<p>Connect a Git repository, choose an HTML page, then click any element in the preview to edit it. No new headers or generated layouts.</p><button className="button primary" onClick={() => { setShowConnect(true); connectFormRef.current?.requestSubmit(); }}>Connect a repository</button><div className="feature-pills"><span>✦ Content edits</span><span>▧ Section clone / remove</span><span>⌘ Git commits</span></div></div>}
           </div>
           <div className="statusbar"><span className="status-ready"><i/> Preview sandbox</span><span>{repo ? inferFramework(files) : "Waiting for project"}</span><span>{currentFile ? currentFile.path : "No page selected"}</span><span className={dirty ? "changes-pending" : ""}>{dirty ? "● Unsaved changes" : "✓ No pending changes"}</span></div>
         </section>
