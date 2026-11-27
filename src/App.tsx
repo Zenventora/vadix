@@ -67,6 +67,8 @@ const starterTemplates: StarterTemplate[] = [
   { id: "hospitality", title: "Hotel & Hospitality", description: "Stay, facilities and booking enquiry", accent: "#0e7490", heading: "Your next memorable stay.", subheading: "Present your property, rooms, amenities and guest experiences.", sections: ["Rooms & Suites", "Experiences", "Plan Your Stay"] },
   { id: "landing", title: "Product Landing Page", description: "One focused page for a service or launch", accent: "#be185d", heading: "Make your next move count.", subheading: "A focused landing page with a clear message and call to action.", sections: ["What You Get", "How It Works", "Get Started"] }
 ];
+function escapeCustomerHtml(value: string) { return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;"); }
+
 function buildStarterHtml(template: StarterTemplate) {
   const esc = (value: string) => value.replace(/[&<>"]/g, char => { const entities: Record<string, string> = { "&": "&amp;", "<": "&lt;", ">": "&gt;", '"' : "&quot;" }; return entities[char] || char; });
   return `<!doctype html>
@@ -138,6 +140,15 @@ export default function App() {
   const [password, setPassword] = useState("");
   const [user, setUser] = useState<any>(null);
   const [accountReady, setAccountReady] = useState(false);
+  const [onboardingStep, setOnboardingStep] = useState<"details" | "website" | "templates" | "existing">("details");
+  const [onboardingDone, setOnboardingDone] = useState(false);
+  const [customerPath, setCustomerPath] = useState<"new" | "existing" | null>(null);
+  const [previewStage, setPreviewStage] = useState(false);
+  const [editorPanelOpen, setEditorPanelOpen] = useState(true);
+  const [businessDetails, setBusinessDetails] = useState({ name: "", email: "", phone: "", tagline: "" });
+  const [websiteUrl, setWebsiteUrl] = useState("");
+  const [websiteMap, setWebsiteMap] = useState("");
+  const [websiteToken, setWebsiteToken] = useState("");
   const [authBusy, setAuthBusy] = useState(false);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
   const [viewport, setViewport] = useState<"monitor" | "desktop" | "tablet" | "mobile">("desktop");
@@ -149,6 +160,18 @@ export default function App() {
   const connectFormRef = useRef<HTMLFormElement>(null);
   const frameRef = useRef<HTMLIFrameElement>(null);
   const htmlResultResolve = useRef<((html: string) => void) | null>(null);
+
+  useEffect(() => {
+    if (!user?.id) { setOnboardingDone(false); setCustomerPath(null); return; }
+    try {
+      setOnboardingDone(localStorage.getItem("vadix:onboarding-complete:" + user.id) === "1");
+      const profile = JSON.parse(localStorage.getItem("vadix:customer-profile:" + user.id) || "{}");
+      setBusinessDetails(current => ({...current,...profile}));
+      setWebsiteUrl(profile.websiteUrl || "");
+      setWebsiteMap(profile.websiteMap || "");
+      setCustomerPath(localStorage.getItem("vadix:customer-path:" + user.id) as "new" | "existing" | null);
+    } catch { setOnboardingDone(false); }
+  }, [user?.id]);
 
   useEffect(() => {
     let active = true;
@@ -376,8 +399,16 @@ export default function App() {
   }
 
   function startFromTemplate(template: StarterTemplate) {
+    setShowConnect(false);
+    setPreviewStage(false);
+    setEditorPanelOpen(true);
     const path = (repo?.root ? repo.root + "/" : "") + "vadix-starters/" + template.id + "/index.html";
-    const file: LoadedFile = { path, content: buildStarterHtml(template) };
+    const brand = escapeCustomerHtml(businessDetails.name.trim() || "Your Brand");
+    const email = escapeCustomerHtml(businessDetails.email.trim() || "hello@example.com");
+    const phone = escapeCustomerHtml(businessDetails.phone.trim() || "[Your phone]");
+    let html = buildStarterHtml(template).replaceAll("Your Brand", brand).replaceAll("hello@example.com", email).replaceAll("[Your phone]", phone);
+    if (businessDetails.tagline.trim()) html = html.replace(template.subheading, escapeCustomerHtml(businessDetails.tagline.trim()));
+    const file: LoadedFile = { path, content: html };
     setCurrentFile(file);
     setOriginalFile({ path, content: "" });
     const previewRepo = repo || { provider: "github" as GitProvider, owner: "template-preview", name: "draft", branch: "main", root: "" };
@@ -518,8 +549,16 @@ export default function App() {
       const key = repo ? "vadix:draft:" + user.id + ":" + repo.owner + "/" + repo.name + ":" + repo.branch + ":" + currentFile.path : "vadix:starter-draft:" + user.id + ":" + currentFile.path;
       localStorage.setItem(key, JSON.stringify({ path: currentFile.path, content, savedAt: new Date().toISOString() }));
       setCurrentFile(file => file ? { ...file, content } : file);
+      const previewRepository = repo || { provider: "github" as GitProvider, owner: "template-preview", name: "draft", branch: "main", root: "" };
+      setFrameHtml(buildPreview(content, previewRepository, currentFile.path));
       setDirty(true);
-      setNotice({ kind: "ok", text: repo ? "Changes saved to your private draft. Review Preview, then push when ready." : "Template changes saved privately in this browser. Review them in Preview; no Git token is required to save this draft." });
+      if (!repo && currentFile.path.startsWith("vadix-starters/")) {
+        setPreviewStage(true);
+        setEditorPanelOpen(false);
+        setNotice({ kind: "ok", text: "Template draft saved. This is a preview only; nothing has been pushed to Git." });
+      } else {
+        setNotice({ kind: "ok", text: "Changes saved to your private draft. Review Preview, then push when ready." });
+      }
     } catch (error) {
       setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not save the local draft." });
     }
@@ -614,25 +653,59 @@ export default function App() {
     return <div className="zv-account-gate"><div className="zv-account-gate-card"><h1>Checking ZenVentora account…</h1><p>Verifying your common account session before opening VADIX.</p></div></div>;
   }
 
+  if (user && !repo && !currentFile && ( !onboardingDone || customerPath !== "existing")) {
+    const finishOnboarding = () => {
+      try {
+        localStorage.setItem("vadix:onboarding-complete:" + user.id, "1");
+        localStorage.setItem("vadix:customer-profile:" + user.id, JSON.stringify({...businessDetails, websiteUrl, websiteMap}));
+        localStorage.setItem("vadix:customer-path:" + user.id, customerPath || "new");
+      } catch {}
+      setOnboardingDone(true);
+    };
+    return <div className="zv-account-gate"><div className="zv-account-gate-card" style={{maxWidth:760,width:"min(94vw,760px)"}}>
+      <div style={{fontSize:12,fontWeight:800,letterSpacing:2,color:"#64748b"}}>VADIX · CUSTOMER SETUP</div>
+      {onboardingStep === "details" && <><h1>Welcome to VADIX</h1><p>First, tell us a little about your business. You can update these details later.</p>
+        <div style={{display:"grid",gridTemplateColumns:"repeat(auto-fit,minmax(220px,1fr))",gap:12,textAlign:"left"}}>
+          <label>Business / customer name<input className="field-input" value={businessDetails.name} onChange={e=>setBusinessDetails({...businessDetails,name:e.target.value})} placeholder="Your business name" /></label>
+          <label>Business email<input className="field-input" type="email" value={businessDetails.email} onChange={e=>setBusinessDetails({...businessDetails,email:e.target.value})} placeholder="hello@example.com" /></label>
+          <label>Phone<input className="field-input" value={businessDetails.phone} onChange={e=>setBusinessDetails({...businessDetails,phone:e.target.value})} placeholder="+91…" /></label>
+          <label>Short tagline<input className="field-input" value={businessDetails.tagline} onChange={e=>setBusinessDetails({...businessDetails,tagline:e.target.value})} placeholder="What your business does" /></label>
+        </div>
+        <div className="action-row" style={{justifyContent:"flex-end",marginTop:20}}><button className="button primary" disabled={!businessDetails.name.trim()} onClick={()=>setOnboardingStep("website")}>Continue →</button></div></>}
+      {onboardingStep === "website" && <><h1>Do you already have a website?</h1><p>Choose the path that matches your business. We will only work with the website or project you connect to this account.</p>
+        <div className="action-row" style={{justifyContent:"center",gap:14,marginTop:24}}><button className="button primary" onClick={()=>{setCustomerPath("existing");setOnboardingStep("existing");}}>Yes, I have a website</button><button className="button subtle" onClick={()=>{setCustomerPath("new");setOnboardingStep("templates");}}>No, create a new website</button></div>
+        <div className="action-row" style={{justifyContent:"flex-start",marginTop:22}}><button className="button subtle" onClick={()=>setOnboardingStep("details")}>← Back</button></div></>}
+      {onboardingStep === "existing" && <><h1>Connect your existing website</h1><p>Enter the public website URL and its source repository. Git provider authorization is required to edit and push changes.</p>
+        <label style={{display:"block",textAlign:"left",marginTop:14}}>Website URL<input className="field-input" type="url" value={websiteUrl} onChange={e=>setWebsiteUrl(e.target.value)} placeholder="https://yourwebsite.com" /></label>
+        <label style={{display:"block",textAlign:"left"}}>Website map / sitemap URL<input className="field-input" type="url" value={websiteMap} onChange={e=>setWebsiteMap(e.target.value)} placeholder="https://yourwebsite.com/sitemap.xml (optional)" /></label>
+        <label style={{display:"block",textAlign:"left"}}>Website access token<input className="field-input" type="password" autoComplete="off" value={websiteToken} onChange={e=>setWebsiteToken(e.target.value)} placeholder="Optional — hidden while typing" /></label>
+        <p className="helper">The token is only used for this session and is not saved in the customer profile. Git provider authorization is still required to push source changes.</p>
+        <div className="action-row" style={{justifyContent:"flex-end",marginTop:20}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button><button className="button primary" disabled={!/^https?:\/\//i.test(websiteUrl)} onClick={()=>{finishOnboarding();setToken(websiteToken);setRepoUrl("");setShowConnect(true);setNotice({kind:"info",text:"Website details saved. Token stays session-only. Connect the matching Git repository to load editable HTML pages."});}}>Continue to connect →</button></div></>}
+      {onboardingStep === "templates" && <><h1>Choose your website template</h1><p>Pick a starter design. You can edit text, images, links and basic design, then save a draft and preview it. No Git token is needed for this template preview.</p>
+        <div className="starter-grid" style={{gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))"}}>{starterTemplates.map(template=><button key={template.id} className="starter-card" onClick={()=>{finishOnboarding();startFromTemplate(template);}}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div>
+        <div className="action-row" style={{justifyContent:"flex-start",marginTop:18}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button></div></>}
+    </div></div>;
+  }
+
   if (!user) {
     return <div className="zv-account-gate"><div className="zv-account-gate-card"><h1>Sign in to VADIX</h1><p>VADIX uses your ZenVentora account. Create or sign in to one account and continue into the product.</p><div className="action-row" style={{justifyContent:"center",marginTop:18}}><button className="button primary" onClick={() => getZenVentoraAccount().then(account => account.signIn("vadix", window.location.origin + "/"))}>Sign in</button><button className="button subtle" onClick={() => getZenVentoraAccount().then(account => account.signUp("vadix", window.location.origin + "/"))}>Create account</button></div></div></div>;
   }
 
   return (
-    <div className="app-shell"><style>{".app-shell{height:auto!important;min-height:100vh!important;overflow:visible!important}.workspace{height:auto!important;min-height:calc(100vh - 70px)!important;overflow:visible!important;align-items:stretch!important}.left-rail,.editor-main,.right-panel{height:auto!important;max-height:none!important;overflow:visible!important}.canvas-area{min-height:65vh!important;overflow:visible!important}.editor-main{min-height:100vh!important}.preview-device,.preview-frame{min-height:70vh!important}@media(max-width:700px){.workspace{display:flex!important;flex-direction:column!important}}"} </style>
+    <div className="app-shell">
       <header className="topbar">
         <a className="brand" href="#" aria-label="Site Visual Editor home"><span className="brand-mark">SV</span><span>site<span className="brand-light">visual</span><small>GIT WORKSPACE</small></span></a>
         <div className="topbar-center"><span className="status-dot" /> Visual Website Editor <span className="topbar-separator">/</span> <span className="muted">{repo ? `${repo.owner}/${repo.name}` : "No repository connected"}</span></div>
-        <div className="topbar-actions"><button className="button subtle small" onClick={() => { if (currentFile?.path.startsWith("vadix-starters/")) { setCurrentFile(null); setOriginalFile(null); setFrameHtml(""); setNotice({kind:"info",text:"Back to template selection. Choose another starter below."}); } else { setShowConnect(true); setNotice({kind:"info",text:"Back to website connection and page selection."}); } }}>← Back</button>
+        <div className="topbar-actions"><button className="button subtle small" onClick={() => { if (currentFile?.path.startsWith("vadix-starters/")) { setPreviewStage(false); setCurrentFile(null); setOriginalFile(null); setFrameHtml(""); setEditorPanelOpen(true); setOnboardingDone(false); setOnboardingStep("templates"); setNotice({kind:"info",text:"Back to template selection. Choose another starter below."}); } else { setShowConnect(true); setNotice({kind:"info",text:"Back to website connection and page selection."}); } }}>← Back</button>
           {user ? <ZenVentoraAccountMenu user={user} /> : <button className="button subtle small" onClick={() => document.getElementById("account-panel")?.scrollIntoView({ behavior: "smooth", block: "center" })}>ZenVentora account</button>}
-          <button className="button primary small" disabled={loading || !currentFile} onClick={saveToGit}>{loading ? "Working…" : "Push to Git"}</button>
+          <button className="button primary small" disabled={loading || !repo || !currentFile || currentFile.path.startsWith("vadix-starters/") && !repo} onClick={saveToGit}>{loading ? "Working…" : "Push to Git"}</button>
         </div>
       </header>
 
       <main className="workspace">
         <aside className="left-rail">
           <div className="rail-heading"><span>PROJECT</span><button className="icon-button" title="Connect another repository" onClick={() => setShowConnect(!showConnect)}>＋</button></div>
-          {showConnect && <form id="connect-repository-form" ref={connectFormRef} className="connect-form" onSubmit={connectRepository}>
+          {showConnect && !currentFile?.path.startsWith("vadix-starters/") && <form id="connect-repository-form" ref={connectFormRef} className="connect-form" onSubmit={connectRepository}>
             <label>Git provider</label>
             <div className="segmented"><button type="button" className={provider === "github" ? "active" : ""} onClick={() => { setProvider("github"); setAccessibleRepos([]); if (repoUrl.includes("gitlab")) setRepoUrl(""); }}>GitHub</button><button type="button" className={provider === "gitlab" ? "active" : ""} onClick={() => { setProvider("gitlab"); setAccessibleRepos([]); if (repoUrl.includes("github")) setRepoUrl(""); }}>GitLab</button></div>
             <div className="provider-connect"><button className="button subtle full" type="button" disabled={authBusy} onClick={() => connectGitProvider(provider)}>{authBusy ? "Redirecting…" : "Connect " + (provider === "github" ? "GitHub" : "GitLab") + " account"}</button><button className="button subtle full" type="button" disabled={loading || !token.trim()} onClick={loadAccessibleRepositories}>{loading ? "Loading…" : "Load repositories I can access"}</button>{accessibleRepos.length > 0 && <><label htmlFor="accessible-repos">Accessible repositories</label><select id="accessible-repos" defaultValue="" onChange={event => chooseAccessibleRepository(event.target.value)}><option value="" disabled>Choose a repository…</option>{accessibleRepos.map(item => <option key={item.label} value={item.label}>{item.label}</option>)}</select></>}</div>
@@ -642,19 +715,21 @@ export default function App() {
             <p className="helper">Connect your GitHub/GitLab account above. VADIX uses the provider authorization session; no token needs to be pasted or managed here. Select a repository available to your connected Git account.</p>
             <button className="button primary full" type="submit" disabled={loading}>{loading ? "Connecting…" : "Connect repository →"}</button>
           </form>}
-          <div className="files-heading"><span>FILES</span><span className="count">{visibleFiles.length}</span></div>
+          {!currentFile?.path.startsWith("vadix-starters/") && <><div className="files-heading"><span>FILES</span><span className="count">{visibleFiles.length}</span></div>
           <input className="file-search" value={filter} onChange={e => setFilter(e.target.value)} placeholder="⌕  Find a page or file…" />
           <div className="file-list">
             {visibleFiles.map(file => <button key={file.path} className={currentFile?.path === file.path ? "file-item selected" : "file-item"} onClick={() => openFile(file.path)} title={file.path}><span className="file-type">{file.path.toLowerCase().endsWith(".html") || file.path.toLowerCase().endsWith(".htm") ? "HTML" : file.path.split(".").pop()?.toUpperCase().slice(0, 4)}</span><span className="file-path">{file.path.split("/").pop()}<small>{file.path.includes("/") ? file.path.split("/").slice(0, -1).join("/") : "root"}</small></span></button>)}
             {!visibleFiles.length && <div className="empty-files">{repo ? "No matching editable files." : "Connect a repository to browse its existing files."}</div>}
           </div>
+          </>}
+          {currentFile?.path.startsWith("vadix-starters/") && <div className="customer-details"><b>New website draft</b><p className="helper">Your starter is saved privately in this browser. Preview first. Connect a repository only when you are ready to publish.</p><button className="button subtle full" onClick={()=>{setPreviewStage(true);setEditorPanelOpen(false);}}>Open saved preview →</button><button className="button subtle full" onClick={()=>{setCurrentFile(null);setOriginalFile(null);setFrameHtml("");setOnboardingDone(false);setOnboardingStep("templates");}}>← Choose another template</button></div>}
           <div className="left-bottom"><span className="shield">▣</span><span><b>Backup-first workflow</b><small>Original backup folder is not modified.</small></span></div>
         </aside>
 
-        <section className="editor-main">
+        {previewStage && currentFile ? <section className="editor-main preview-stage"><div className="editor-toolbar"><div className="breadcrumbs"><b>Saved template · Preview</b></div><div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "monitor" ? "active" : ""} onClick={() => setViewport("monitor")} title="Monitor preview">▣</button><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={()=>{setPreviewStage(false);setEditorPanelOpen(true);}}>← Back to editor</button><button className="button primary small" onClick={()=>{setPreviewStage(false);setShowConnect(true);setEditorPanelOpen(true);setNotice({kind:"info",text:"Connect your Git repository when you are ready to publish this template."});}}>Connect repository to publish</button></div></div><div className="canvas-area"><div className={`preview-device ${viewport}`} style={{width:viewport==="monitor"?"min(100%,1440px)":viewport==="desktop"?"min(100%,1100px)":viewport==="tablet"?"min(100%,820px)":"min(100%,420px)",margin:"0 auto"}}><div className="preview-browser"><div className="browser-dots"><i/><i/><i/></div><div className="browser-url">Local saved template preview</div></div><iframe ref={frameRef} title="Saved template preview" className="preview-frame" sandbox="allow-scripts allow-forms allow-popups" srcDoc={previewSrc}/></div></div></section> : <section className="editor-main">
           <div className="editor-toolbar">
             <div className="breadcrumbs"><span>Pages</span><span>›</span><b>{currentFile?.path || "Choose a page"}</b>{dirty && <span className="unsaved-dot" title="Unsaved changes" />}</div>
-            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "monitor" ? "active" : ""} onClick={() => setViewport("monitor")} title="Monitor preview">▣</button><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button>{/* Source-code export is intentionally not exposed in customer mode. */}</div>
+            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "monitor" ? "active" : ""} onClick={() => setViewport("monitor")} title="Monitor preview">▣</button><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button>{/* Source-code export is intentionally not exposed in customer mode. */}{!editorPanelOpen && <button className="button subtle small" onClick={()=>setEditorPanelOpen(true)}>Edit panel</button>}</div>
           </div>
           <div className="canvas-area">
             {previewSrc ? <div className={`preview-device ${viewport}`} style={{width:viewport==="monitor"?"min(100%,1440px)":viewport==="desktop"?"min(100%,1100px)":viewport==="tablet"?"min(100%,820px)":"min(100%,420px)",margin:"0 auto"}}><div className="preview-browser"><div className="browser-dots"><i/><i/><i/></div><div className="browser-url">{repo?.owner}/{repo?.name}/{currentFile?.path}</div><span className="browser-lock">⌁</span></div><iframe ref={frameRef} title="Isolated website preview" className="preview-frame" sandbox="allow-scripts allow-forms allow-popups" srcDoc={previewSrc} /></div>
@@ -662,10 +737,10 @@ export default function App() {
               : <div className="empty-canvas"><div className="empty-illustration"><div className="mock-window"><div className="mock-top"><i/><i/><i/></div><div className="mock-layout"><div/><div/><div/><div/></div></div><span className="mock-cursor">↖</span></div><h2>Choose a starting point for your website.</h2><p>Existing website: select an HTML page from the file list. New alternative: start from one of these six editable layouts. Your current website stays untouched until you commit.</p><div className="starter-grid">{starterTemplates.map(template => <button key={template.id} className="starter-card" onClick={() => startFromTemplate(template)}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div><p>Connect a Git repository, choose an HTML page, then click any element in the preview to edit it. No new headers or generated layouts.</p><button className="button primary" onClick={() => { setShowConnect(true); connectFormRef.current?.requestSubmit(); }}>Connect a repository</button><div className="feature-pills"><span>✦ Content edits</span><span>▧ Section clone / remove</span><span>⌘ Git commits</span></div></div>}
           </div>
           <div className="statusbar"><span className="status-ready"><i/> Preview sandbox</span><span>{repo ? inferFramework(files) : "Waiting for project"}</span><span>{currentFile ? currentFile.path : "No page selected"}</span><span className={dirty ? "changes-pending" : ""}>{dirty ? "● Unsaved changes" : "✓ No pending changes"}</span></div>
-        </section>
+        </section>}
 
-        <aside className="right-panel">
-          <div className="panel-tabs"><button className="active">Edit content & design</button></div>
+        {editorPanelOpen && !previewStage && <aside className="right-panel">
+          <div className="panel-tabs"><button className="active">Edit content & design</button><button className="panel-close" type="button" onClick={()=>setEditorPanelOpen(false)} aria-label="Close editing panel">×</button></div>
           <div className="panel-content">
             {showLinks && <section className="link-finder"><div className="link-finder-heading"><h4>LINKS IN THIS PAGE</h4><button className="icon-button" onClick={() => setShowLinks(false)} title="Close link finder">×</button></div>{linkInventory.length ? linkInventory.map((link, index) => <button key={link.id || index} className="link-result" onClick={() => frameRef.current?.contentWindow?.postMessage({ type: "ve-select-id", id: link.id }, "*")}><span>{link.text || "Untitled link"}</span><small title={link.href}>{link.href}</small></button>) : <p className="helper">No links found in this page, or the preview has not finished loading.</p>}</section>}
             <div className="panel-title"><div><span className="eyebrow">SELECTED WEBSITE ITEM</span><h3>{selected.tag ? (selected.tag === "img" ? "Image" : selected.tag === "a" ? "Link / Button" : "Text or section") : "Nothing selected"}</h3></div></div>
@@ -681,7 +756,7 @@ export default function App() {
           <div id="account-panel" className="account-panel"><div className="account-title"><span className="database-icon">▤</span><div><b>ZenVentora account</b><small>{user ? "Account connected" : "Sign in to use VADIX"}</small></div></div>
             {user ? <div className="account-signed"><span className="account-check">✓</span><span>VADIX is connected to {user.email || "your ZenVentora account"}.</span><button className="button subtle small" onClick={() => getZenVentoraAccount().then(account => account.openAccount())}>Manage account ↗</button></div> : <div className="action-row"><button className="button subtle" onClick={() => getZenVentoraAccount().then(account => account.signIn("vadix", window.location.origin + "/"))}>Sign in</button><button className="button subtle" onClick={() => getZenVentoraAccount().then(account => account.signUp("vadix", window.location.origin + "/"))}>Create account</button></div>}
           </div>
-        </aside>
+        </aside>}
       </main>
       {notice && <div className={`toast ${notice.kind}`} role="status"><span>{notice.kind === "ok" ? "✓" : notice.kind === "error" ? "!" : "i"}</span>{notice.text}<button onClick={() => setNotice(null)} aria-label="Dismiss message">×</button></div>}
     </div>
