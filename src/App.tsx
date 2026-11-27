@@ -140,7 +140,7 @@ export default function App() {
   const [accountReady, setAccountReady] = useState(false);
   const [authBusy, setAuthBusy] = useState(false);
   const [savedProjectId, setSavedProjectId] = useState<string | null>(null);
-  const [viewport, setViewport] = useState<"desktop" | "tablet" | "mobile">("desktop");
+  const [viewport, setViewport] = useState<"monitor" | "desktop" | "tablet" | "mobile">("desktop");
   const [commitMessage, setCommitMessage] = useState("Update website with visual editor");
   const [stagedAssets, setStagedAssets] = useState<StagedAsset[]>([]);
   const undoHistory = useRef<string[]>([]);
@@ -503,20 +503,23 @@ export default function App() {
       setNotice({ kind: "error", text: "Your browser blocked the preview window. Allow pop-ups for VADIX and try again." });
       return;
     }
+    previewWindow.opener = null;
     previewWindow.document.open();
-    previewWindow.document.write(previewSrc);
+    const csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src https: data: blob:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'\">";
+    const safePreview = previewSrc.replace("<head", "<head" + csp);
+    previewWindow.document.write(safePreview);
     previewWindow.document.close();
   }
 
   async function saveDraft() {
-    if (!repo || !currentFile || !user) return setNotice({ kind: "error", text: "Sign in and open a website page before saving a draft." });
+    if (!currentFile || !user) return setNotice({ kind: "error", text: "Sign in and open a website page before saving a draft." });
     try {
       const content = await requestEditedHtml();
-      const key = "vadix:draft:" + user.id + ":" + repo.owner + "/" + repo.name + ":" + repo.branch + ":" + currentFile.path;
+      const key = repo ? "vadix:draft:" + user.id + ":" + repo.owner + "/" + repo.name + ":" + repo.branch + ":" + currentFile.path : "vadix:starter-draft:" + user.id + ":" + currentFile.path;
       localStorage.setItem(key, JSON.stringify({ path: currentFile.path, content, savedAt: new Date().toISOString() }));
       setCurrentFile(file => file ? { ...file, content } : file);
       setDirty(true);
-      setNotice({ kind: "ok", text: "Draft saved privately in this browser for your signed-in account. Review Preview, then use Push to Git when ready." });
+      setNotice({ kind: "ok", text: repo ? "Changes saved to your private draft. Review Preview, then push when ready." : "Template changes saved privately in this browser. Review them in Preview; no Git token is required to save this draft." });
     } catch (error) {
       setNotice({ kind: "error", text: error instanceof Error ? error.message : "Could not save the local draft." });
     }
@@ -568,7 +571,7 @@ export default function App() {
         changedFiles: [currentFile.path, ...stagedAssets.map(asset => asset.repoPath)]
       });
       localStorage.setItem(historyKey, JSON.stringify(priorHistory.slice(0, 50)));
-      setNotice({ kind: "ok", text: `Git commit succeeded and is live on GitHub. ${currentFile.path} pushed to ${repo.branch}.${result.commitSha ? ` Commit: ${result.commitSha.slice(0, 8)}` : ""} History saved in this browser.` });
+      setNotice({ kind: "ok", text: `Git commit succeeded. Hosting deployment status depends on the repository deployment workflow. ${currentFile.path} pushed to ${repo.branch}.${result.commitSha ? ` Commit: ${result.commitSha.slice(0, 8)}` : ""} History saved in this browser.` });
     } catch (error) {
       // Supabase/PostgREST errors are plain objects, not necessarily Error instances.
       // Preserve the successful Git commit and show the real database response.
@@ -620,9 +623,9 @@ export default function App() {
       <header className="topbar">
         <a className="brand" href="#" aria-label="Site Visual Editor home"><span className="brand-mark">SV</span><span>site<span className="brand-light">visual</span><small>GIT WORKSPACE</small></span></a>
         <div className="topbar-center"><span className="status-dot" /> Visual Website Editor <span className="topbar-separator">/</span> <span className="muted">{repo ? `${repo.owner}/${repo.name}` : "No repository connected"}</span></div>
-        <div className="topbar-actions">
+        <div className="topbar-actions"><button className="button subtle small" onClick={() => { if (currentFile?.path.startsWith("vadix-starters/")) { setCurrentFile(null); setOriginalFile(null); setFrameHtml(""); setNotice({kind:"info",text:"Back to template selection. Choose another starter below."}); } else { setShowConnect(true); setNotice({kind:"info",text:"Back to website connection and page selection."}); } }}>← Back</button>
           {user ? <ZenVentoraAccountMenu user={user} /> : <button className="button subtle small" onClick={() => document.getElementById("account-panel")?.scrollIntoView({ behavior: "smooth", block: "center" })}>ZenVentora account</button>}
-          <button className="button primary small" disabled={loading || !currentFile} onClick={saveToGit}>{loading ? "Working…" : "Save Changes · Push to Git"}</button>
+          <button className="button primary small" disabled={loading || !currentFile} onClick={saveToGit}>{loading ? "Working…" : "Push to Git"}</button>
         </div>
       </header>
 
@@ -651,11 +654,11 @@ export default function App() {
         <section className="editor-main">
           <div className="editor-toolbar">
             <div className="breadcrumbs"><span>Pages</span><span>›</span><b>{currentFile?.path || "Choose a page"}</b>{dirty && <span className="unsaved-dot" title="Unsaved changes" />}</div>
-            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button>{/* Source-code export is intentionally not exposed in customer mode. */}</div>
+            <div className="toolbar-controls"><div className="viewport-switch"><button className={viewport === "monitor" ? "active" : ""} onClick={() => setViewport("monitor")} title="Monitor preview">▣</button><button className={viewport === "desktop" ? "active" : ""} onClick={() => setViewport("desktop")} title="Desktop preview">▰</button><button className={viewport === "tablet" ? "active" : ""} onClick={() => setViewport("tablet")} title="Tablet preview">▯</button><button className={viewport === "mobile" ? "active" : ""} onClick={() => setViewport("mobile")} title="Mobile preview">▯</button></div><button className="button subtle small" onClick={() => { setShowLinks(true); frameRef.current?.contentWindow?.postMessage({ type: "ve-links" }, "*"); }} disabled={!previewSrc}>↗ Find links</button><button className="button subtle small" onClick={() => restoreHistory("undo")} disabled={!currentFile || undoHistory.current.length === 0} title="Undo last change">↶ Undo</button><button className="button subtle small" onClick={() => restoreHistory("redo")} disabled={!currentFile || redoHistory.current.length === 0} title="Redo change">↷ Redo</button><button className="button subtle small" onClick={openSeparatePreview} disabled={!previewSrc}>Preview ↗</button>{/* Source-code export is intentionally not exposed in customer mode. */}</div>
           </div>
           <div className="canvas-area">
-            {previewSrc ? <div className={`preview-device ${viewport}`}><div className="preview-browser"><div className="browser-dots"><i/><i/><i/></div><div className="browser-url">{repo?.owner}/{repo?.name}/{currentFile?.path}</div><span className="browser-lock">⌁</span></div><iframe ref={frameRef} title="Isolated website preview" className="preview-frame" sandbox="allow-scripts allow-forms allow-popups" srcDoc={previewSrc} /></div>
-              : currentFile ? <div className="source-editor-panel"><div className="source-editor-heading"><div><b>Source file editor</b><small>{currentFile.path} · {inferFramework(files)}</small></div><span className="element-badge">SOURCE MODE</span></div><p>HTML pages use visual preview. This file is editable as source; framework-aware JSX visual preview is a separate adapter still in progress.</p><textarea className="source-editor" spellCheck={false} value={currentFile.content} onChange={e => { setCurrentFile({ ...currentFile, content: e.target.value }); setDirty(true); }} /></div>
+            {previewSrc ? <div className={`preview-device ${viewport}`} style={{width:viewport==="monitor"?"min(100%,1440px)":viewport==="desktop"?"min(100%,1100px)":viewport==="tablet"?"min(100%,820px)":"min(100%,420px)",margin:"0 auto"}}><div className="preview-browser"><div className="browser-dots"><i/><i/><i/></div><div className="browser-url">{repo?.owner}/{repo?.name}/{currentFile?.path}</div><span className="browser-lock">⌁</span></div><iframe ref={frameRef} title="Isolated website preview" className="preview-frame" sandbox="allow-scripts allow-forms allow-popups" srcDoc={previewSrc} /></div>
+              : currentFile ? <div className="empty-canvas"><h2>Source file is protected</h2><p>Customer visual mode allows visible content, links, images and basic design only. Source code is not editable.</p></div>
               : <div className="empty-canvas"><div className="empty-illustration"><div className="mock-window"><div className="mock-top"><i/><i/><i/></div><div className="mock-layout"><div/><div/><div/><div/></div></div><span className="mock-cursor">↖</span></div><h2>Choose a starting point for your website.</h2><p>Existing website: select an HTML page from the file list. New alternative: start from one of these six editable layouts. Your current website stays untouched until you commit.</p><div className="starter-grid">{starterTemplates.map(template => <button key={template.id} className="starter-card" onClick={() => startFromTemplate(template)}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div><p>Connect a Git repository, choose an HTML page, then click any element in the preview to edit it. No new headers or generated layouts.</p><button className="button primary" onClick={() => { setShowConnect(true); connectFormRef.current?.requestSubmit(); }}>Connect a repository</button><div className="feature-pills"><span>✦ Content edits</span><span>▧ Section clone / remove</span><span>⌘ Git commits</span></div></div>}
           </div>
           <div className="statusbar"><span className="status-ready"><i/> Preview sandbox</span><span>{repo ? inferFramework(files) : "Waiting for project"}</span><span>{currentFile ? currentFile.path : "No page selected"}</span><span className={dirty ? "changes-pending" : ""}>{dirty ? "● Unsaved changes" : "✓ No pending changes"}</span></div>
@@ -673,7 +676,7 @@ export default function App() {
               <section className="property-section"><h4>APPEARANCE</h4><div className="field-row"><div><label htmlFor="prop-color">Text color</label><input id="prop-color" value={selected.color} onChange={e => applyPatch({ color: e.target.value })} placeholder="#222 or CSS" /></div><div><label htmlFor="prop-bg">Background</label><input id="prop-bg" value={selected.backgroundColor} onChange={e => applyPatch({ backgroundColor: e.target.value })} placeholder="#fff or CSS" /></div></div><div className="field-row"><div><label htmlFor="prop-font">Font size</label><select id="prop-font" value={selected.fontSize || "inherit"} onChange={e => applyPatch({ fontSize: e.target.value === "inherit" ? "" : e.target.value })}><option value="inherit">Theme default</option>{[12,14,16,18,20,24,28,32,40,48,56,64,72].map(size => <option key={size} value={size + "px"}>{size}px</option>)}</select></div><div><label htmlFor="prop-width">Size</label><select id="prop-width" value={selected.width || "auto"} onChange={e => applyPatch({ width: e.target.value === "auto" ? "" : e.target.value })}><option value="auto">Original / auto</option><option value="25%">Small (25%)</option><option value="50%">Half (50%)</option><option value="75%">Large (75%)</option><option value="100%">Full width</option></select></div></div><div className="field-row"><div><label htmlFor="prop-margin">Margin</label><input id="prop-margin" value={selected.margin} onChange={e => applyPatch({ margin: e.target.value })} placeholder="16px 0" /></div><div><label htmlFor="prop-padding">Padding</label><input id="prop-padding" value={selected.padding} onChange={e => applyPatch({ padding: e.target.value })} placeholder="12px" /></div></div><label htmlFor="prop-align">Text alignment</label><select id="prop-align" value={selected.textAlign} onChange={e => applyPatch({ textAlign: e.target.value })}><option value="">Theme default</option><option value="left">Left</option><option value="center">Center</option><option value="right">Right</option><option value="justify">Justify</option></select></section>
               <section className="property-section"><h4>SAFE EDITING</h4><p className="helper">Only visible content, links, images and basic design settings are editable. Source-code editing and structural code controls are unavailable in the customer editor.</p></section>
             </>}
-            <div className="panel-save"><button className="button primary full" disabled={loading || !currentFile || !user} onClick={saveDraft}>{loading ? "Saving…" : "▣ Save draft to database"}</button><small>{user ? "Keeps a private draft in this browser until you push." : "Sign in to save your draft."}</small><button className="button subtle full" disabled={loading || !currentFile} onClick={saveToGit}>↥ Commit changes to Git</button></div>
+            <div className="panel-save"><button className="button primary full" disabled={loading || !currentFile || !user} onClick={saveDraft}>{loading ? "Saving…" : "▣ Save Changes"}</button><small>{user ? "Keeps a private draft in this browser until you push." : "Sign in to save your draft."}</small><button className="button subtle full" disabled={loading || !currentFile} onClick={saveToGit}>↥ Push to Git</button></div>
           </div>
           <div id="account-panel" className="account-panel"><div className="account-title"><span className="database-icon">▤</span><div><b>ZenVentora account</b><small>{user ? "Account connected" : "Sign in to use VADIX"}</small></div></div>
             {user ? <div className="account-signed"><span className="account-check">✓</span><span>VADIX is connected to {user.email || "your ZenVentora account"}.</span><button className="button subtle small" onClick={() => getZenVentoraAccount().then(account => account.openAccount())}>Manage account ↗</button></div> : <div className="action-row"><button className="button subtle" onClick={() => getZenVentoraAccount().then(account => account.signIn("vadix", window.location.origin + "/"))}>Sign in</button><button className="button subtle" onClick={() => getZenVentoraAccount().then(account => account.signUp("vadix", window.location.origin + "/"))}>Create account</button></div>}
