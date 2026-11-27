@@ -503,6 +503,7 @@ export default function App() {
       setNotice({ kind: "error", text: "Your browser blocked the preview window. Allow pop-ups for VADIX and try again." });
       return;
     }
+    previewWindow.opener = null;
     previewWindow.document.open();
     previewWindow.document.write(previewSrc);
     previewWindow.document.close();
@@ -568,7 +569,7 @@ export default function App() {
         changedFiles: [currentFile.path, ...stagedAssets.map(asset => asset.repoPath)]
       });
       localStorage.setItem(historyKey, JSON.stringify(priorHistory.slice(0, 50)));
-      setNotice({ kind: "ok", text: `Git commit succeeded and is live on GitHub. ${currentFile.path} pushed to ${repo.branch}.${result.commitSha ? ` Commit: ${result.commitSha.slice(0, 8)}` : ""} History saved in this browser.` });
+      setNotice({ kind: "ok", text: `Git commit succeeded. Hosting deployment status depends on the repository deployment workflow. ${currentFile.path} pushed to ${repo.branch}.${result.commitSha ? ` Commit: ${result.commitSha.slice(0, 8)}` : ""} History saved in this browser.` });
     } catch (error) {
       // Supabase/PostgREST errors are plain objects, not necessarily Error instances.
       // Preserve the successful Git commit and show the real database response.
@@ -622,7 +623,7 @@ export default function App() {
         <div className="topbar-center"><span className="status-dot" /> Visual Website Editor <span className="topbar-separator">/</span> <span className="muted">{repo ? `${repo.owner}/${repo.name}` : "No repository connected"}</span></div>
         <div className="topbar-actions"><button className="button subtle small" onClick={() => { if (currentFile?.path.startsWith("vadix-starters/")) { setCurrentFile(null); setOriginalFile(null); setFrameHtml(""); setNotice({kind:"info",text:"Back to template selection. Choose another starter below."}); } else { setShowConnect(true); setNotice({kind:"info",text:"Back to website connection and page selection."}); } }}>← Back</button>
           {user ? <ZenVentoraAccountMenu user={user} /> : <button className="button subtle small" onClick={() => document.getElementById("account-panel")?.scrollIntoView({ behavior: "smooth", block: "center" })}>ZenVentora account</button>}
-          <button className="button primary small" disabled={loading || !currentFile} onClick={saveToGit}>{loading ? "Working…" : "Save Changes · Push to Git"}</button>
+          <button className="button primary small" disabled={loading || !currentFile} onClick={saveToGit}>{loading ? "Working…" : "Push to Git"}</button>
         </div>
       </header>
 
