@@ -17,3 +17,6 @@
 
 /* VADIX editor workflow controls: history, backup and independent preview */
 .toolbar-controls{flex-wrap:wrap;gap:6px}.toolbar-controls .button{white-space:nowrap}.preview-device.desktop{width:min(100%,1440px)}.preview-device.tablet{width:min(100%,900px)}.preview-device.mobile{width:min(100%,390px)}
+
+/* Six editable customer starter layouts */
+.starter-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:9px;margin:18px auto;max-width:560px}.starter-card{display:flex;align-items:flex-start;gap:9px;text-align:left;padding:12px;border:1px solid #303b50;border-radius:9px;background:#171e2a;color:#e2e8f5;cursor:pointer;min-width:0}.starter-card:hover{border-color:#7b91ff;background:#202a3b}.starter-swatch{width:8px;height:34px;border-radius:4px;flex-shrink:0}.starter-card b,.starter-card small{display:block}.starter-card b{font-size:11px}.starter-card small{font-size:9px;line-height:1.5;color:#91a0b7;margin-top:5px}@media(max-width:560px){.starter-grid{grid-template-columns:1fr}}
