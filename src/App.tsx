@@ -339,18 +339,19 @@ export default function App() {
     setRoot("");
   }
 
-  async function connectRepository(event: FormEvent) {
+  async function connectRepository(event: FormEvent, customerRepoUrl?: string, customerToken?: string, customerBranch?: string) {
     event.preventDefault();
-    if (!token.trim()) return setNotice({ kind: "error", text: "Connect GitHub or paste a repository access token first." });
+    const activeToken = (customerToken ?? token).trim();
+    if (!activeToken) return setNotice({ kind: "error", text: "Enter a GitHub/GitLab access token or connect the provider first." });
     setLoading(true);
     setNotice({ kind: "info", text: "Checking GitHub access and scanning repository files…" });
     try {
-      const parsed = parseRepositoryUrl(repoUrl, branch, root);
+      const parsed = parseRepositoryUrl(customerRepoUrl ?? repoUrl, customerBranch ?? branch, root);
       if (parsed.provider !== provider) setProvider(parsed.provider);
 
       // Git access is the primary operation. A failure to persist editor metadata
       // must not discard a successfully fetched repository tree.
-      const list = await listRepositoryFiles(parsed, token.trim());
+      const list = await listRepositoryFiles(parsed, activeToken);
       let persistenceWarning = "";
       let projectId: string | null = null;
       if (user) {
@@ -691,7 +692,7 @@ function writeSafePreviewWindow(previewWindow: Window, html: string) {
         <label style={{display:"block",textAlign:"left"}}>Website map / sitemap URL<input className="field-input" type="text" value={websiteMap} onChange={e=>setWebsiteMap(e.target.value)} placeholder="https://yourwebsite.com/sitemap.xml (optional)" /></label>
         <label style={{display:"block",textAlign:"left"}}>Website access token<input className="field-input" type="password" autoComplete="off" value={websiteToken} onChange={e=>setWebsiteToken(e.target.value)} placeholder="Optional — hidden while typing" /></label>
         <p className="helper">The token is only used for this session and is not saved in the customer profile. Git provider authorization is still required to push source changes.</p>
-        <div className="action-row" style={{justifyContent:"flex-end",marginTop:20}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button><button className="button primary" onClick={()=>{const url=websiteUrl.trim();if(!/^https?:\/\//i.test(url)){setNotice({kind:"error",text:"Enter a valid website URL beginning with https://"});return;}setWebsiteUrl(url);setToken(websiteToken.trim());let owner="",repoName="";try{const u=new URL(url);if(u.hostname.endsWith(".github.io")){owner=u.hostname.split(".")[0];repoName=u.pathname.split("/").filter(Boolean)[0]||owner+".github.io";}}catch{}if(owner&&repoName){setRepoUrl("https://github.com/"+owner+"/"+repoName);setBranch(/^[\w.-]+$/.test(websiteMap.trim())?websiteMap.trim():"main");setRoot("");}else{setRepoUrl("");setBranch(/^[\w.-]+$/.test(websiteMap.trim())?websiteMap.trim():"main");}finishOnboarding();setShowConnect(true);setNotice({kind:"info",text:owner?"GitHub Pages source repository detected. Verify repo and branch, then connect to load its HTML pages.":"A public URL alone cannot identify its source repository; connect the matching Git repository to load and push HTML pages."});}}>Continue to connect →</button></div></>}
+        <div className="action-row" style={{justifyContent:"flex-end",marginTop:20}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button><button className="button primary" onClick={()=>{const url=websiteUrl.trim();if(!/^https?:\/\//i.test(url)){setNotice({kind:"error",text:"Enter a valid website URL beginning with https://"});return;}setWebsiteUrl(url);let owner="",repoName="";try{const u=new URL(url);if(u.hostname.endsWith(".github.io")){owner=u.hostname.split(".")[0];repoName=u.pathname.split("/").filter(Boolean)[0]||owner+".github.io";}}catch{}const selectedBranch=/^[\w.-]+$/.test(websiteMap.trim())?websiteMap.trim():"main";finishOnboarding();if(owner&&repoName){const detectedRepo="https://github.com/"+owner+"/"+repoName;setRepoUrl(detectedRepo);setBranch(selectedBranch);setRoot("");void connectRepository({preventDefault(){} } as FormEvent,detectedRepo,websiteToken,selectedBranch);}else{setToken(websiteToken.trim());setRepoUrl("");setBranch(selectedBranch);setShowConnect(true);setNotice({kind:"info",text:"Website URL saved. Enter its source repository URL in the connection panel to load and push the site."});}}>Continue to connect →</button></div></>}
       {onboardingStep === "templates" && <><h1>Choose your website template</h1><p>Pick a starter design. You can edit text, images, links and basic design, then save a draft and preview it. No Git token is needed for this template preview.</p>
         <div className="starter-grid" style={{gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))"}}>{starterTemplates.map(template=><button key={template.id} className="starter-card" onClick={()=>{finishOnboarding();startFromTemplate(template);}}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div>
         <div className="action-row" style={{justifyContent:"flex-start",marginTop:18}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button></div></>}
