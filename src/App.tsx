@@ -697,7 +697,6 @@ function writeSafePreviewWindow(previewWindow: Window, html: string) {
       }
       const selectedBranch = branch.trim() || "main";
       setBranch(selectedBranch); setToken(websiteToken.trim()); setRepoUrl(sourceRepo); setRoot("");
-      finishOnboarding();
       const syntheticEvent = { preventDefault: () => {} } as unknown as FormEvent;
       void connectRepository(syntheticEvent, sourceRepo, websiteToken, selectedBranch);
     };
