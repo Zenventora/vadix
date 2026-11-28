@@ -175,6 +175,30 @@ export default function App() {
     setBranch("main");
   }, [user?.id]);
 
+  // Restore the latest saved starter draft for this signed-in customer after refresh.
+  useEffect(() => {
+    if (!user?.id || currentFile) return;
+    try {
+      const prefix = "vadix:starter-draft:" + user.id + ":";
+      const drafts: Array<{ key: string; path: string; content: string; savedAt: string }> = [];
+      for (let i = 0; i < localStorage.length; i++) {
+        const key = localStorage.key(i);
+        if (!key || !key.startsWith(prefix)) continue;
+        const value = JSON.parse(localStorage.getItem(key) || "null");
+        if (value && typeof value.path === "string" && typeof value.content === "string") drafts.push({ key, path: value.path, content: value.content, savedAt: value.savedAt || "" });
+      }
+      drafts.sort((a, b) => b.savedAt.localeCompare(a.savedAt));
+      const latest = drafts[0];
+      if (!latest) return;
+      const file: LoadedFile = { path: latest.path, content: latest.content };
+      const previewRepo = { provider: "github" as GitProvider, owner: "template-preview", name: "draft", branch: "main", root: "" };
+      setCurrentFile(file); setOriginalFile({ path: file.path, content: "" });
+      setFrameHtml(buildPreview(file.content, previewRepo, file.path)); setDirty(true);
+      setPreviewStage(false); setEditorPanelOpen(true); setOnboardingDone(true); setOnboardingStep("templates");
+      setNotice({ kind: "ok", text: "Your saved website draft was restored after refresh. Nothing has been published." });
+    } catch { /* Ignore damaged browser draft data and let the customer start fresh. */ }
+  }, [user?.id]);
+
   useEffect(() => {
     let active = true;
     let unsubscribeAccount = () => {};
@@ -430,6 +454,18 @@ export default function App() {
       const file = await readRepositoryFile(repo, token.trim(), path);
       if (user && savedProjectId) {
         void supabase.from("visual_editor_projects").update({ settings: { lastOpenedFile: path, editor: "visual" }, updated_at: new Date().toISOString() }).eq("id", savedProjectId).eq("owner_id", user.id);
+      }
+      if (user) {
+        const localKey = "vadix:draft:" + user.id + ":" + repo.owner + "/" + repo.name + ":" + repo.branch + ":" + path;
+        try {
+          const localDraft = JSON.parse(localStorage.getItem(localKey) || "null");
+          if (typeof localDraft?.content === "string" && localDraft.content !== file.content) {
+            setCurrentFile({ ...file, content: localDraft.content }); setOriginalFile(file); setSelected(emptyElement); setDirty(true);
+            setFrameHtml(buildPreview(localDraft.content, repo, path));
+            setNotice({ kind: "ok", text: "Restored your saved browser draft for this page. Review before pushing to Git." });
+            return;
+          }
+        } catch { /* Invalid local draft: continue with the repository version. */ }
       }
       if (user && savedProjectId) {
         const { data: draft } = await supabase.from("visual_editor_revisions").select("snapshot,created_at")
