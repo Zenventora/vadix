@@ -674,21 +674,32 @@ function writeSafePreviewWindow(previewWindow: Window, html: string) {
     };
     const continueExistingWebsite = () => {
       const url = websiteUrl.trim();
-      if (!(url.startsWith("https://") || url.startsWith("http://"))) { setNotice({ kind: "error", text: "Enter a valid website URL beginning with https://" }); return; }
-      setWebsiteUrl(url);
-      let owner = "", repoName = "";
-      try { const parsedUrl = new URL(url); if (parsedUrl.hostname.endsWith(".github.io")) { owner = parsedUrl.hostname.split(".")[0]; repoName = parsedUrl.pathname.split("/").filter(Boolean)[0] || owner + ".github.io"; } } catch {}
-      const selectedBranch = /^[A-Za-z0-9_.-]+$/.test(websiteMap.trim()) ? websiteMap.trim() : "main";
-      finishOnboarding();
-      if (owner && repoName) {
-        const detectedRepo = "https://github.com/" + owner + "/" + repoName;
-        setRepoUrl(detectedRepo); setBranch(selectedBranch); setRoot("");
-        const syntheticEvent = { preventDefault: () => {} } as unknown as FormEvent;
-        void connectRepository(syntheticEvent, detectedRepo, websiteToken, selectedBranch);
-      } else {
-        setToken(websiteToken.trim()); setRepoUrl(""); setBranch(selectedBranch); setShowConnect(true);
-        setNotice({ kind: "info", text: "Website URL saved. Enter its source repository URL in the connection panel to load and push the site." });
+      if (!(url.startsWith("https://") || url.startsWith("http://"))) {
+        setNotice({ kind: "error", text: "Enter a valid public website URL beginning with https://" }); return;
       }
+      let sourceRepo = repoUrl.trim();
+      // Only GitHub Pages URLs can be safely mapped to a repo automatically.
+      if (!sourceRepo) {
+        try {
+          const parsedUrl = new URL(url);
+          if (parsedUrl.hostname.endsWith(".github.io")) {
+            const owner = parsedUrl.hostname.split(".")[0];
+            const repoName = parsedUrl.pathname.split("/").filter(Boolean)[0] || owner + ".github.io";
+            sourceRepo = "https://github.com/" + owner + "/" + repoName;
+          }
+        } catch {}
+      }
+      if (!sourceRepo) {
+        setNotice({ kind: "error", text: "Enter the source Git repository URL. A public website or sitemap alone cannot be pushed to Git." }); return;
+      }
+      if (!websiteToken.trim()) {
+        setNotice({ kind: "error", text: "Enter a repository access token with read and write permission." }); return;
+      }
+      const selectedBranch = branch.trim() || "main";
+      setBranch(selectedBranch); setToken(websiteToken.trim()); setRepoUrl(sourceRepo); setRoot("");
+      finishOnboarding();
+      const syntheticEvent = { preventDefault: () => {} } as unknown as FormEvent;
+      void connectRepository(syntheticEvent, sourceRepo, websiteToken, selectedBranch);
     };
     return <div className="zv-account-gate"><div className="zv-account-gate-card" style={{maxWidth:760,width:"min(94vw,760px)"}}>
       <div style={{fontSize:12,fontWeight:800,letterSpacing:2,color:"#64748b"}}>VADIX · CUSTOMER SETUP</div>
@@ -705,9 +716,10 @@ function writeSafePreviewWindow(previewWindow: Window, html: string) {
         <div className="action-row" style={{justifyContent:"flex-start",marginTop:22}}><button className="button subtle" onClick={()=>setOnboardingStep("details")}>← Back</button></div></>}
       {onboardingStep === "existing" && <><h1>Connect your existing website</h1><p>Enter the public website URL and its source repository. Git provider authorization is required to edit and push changes.</p>
         <label style={{display:"block",textAlign:"left",marginTop:14}}>Website URL<input className="field-input" type="url" value={websiteUrl} onChange={e=>setWebsiteUrl(e.target.value)} placeholder="https://yourwebsite.com" /></label>
-        <label style={{display:"block",textAlign:"left"}}>Website map / sitemap URL<input className="field-input" type="text" value={websiteMap} onChange={e=>setWebsiteMap(e.target.value)} placeholder="https://yourwebsite.com/sitemap.xml (optional)" /></label>
-        <label style={{display:"block",textAlign:"left"}}>Website access token<input className="field-input" type="password" autoComplete="off" value={websiteToken} onChange={e=>setWebsiteToken(e.target.value)} placeholder="Optional — hidden while typing" /></label>
-        <p className="helper">The token is only used for this session and is not saved in the customer profile. Git provider authorization is still required to push source changes.</p>
+        <label style={{display:"block",textAlign:"left"}}>Website map / sitemap URL<input className="field-input" type="url" value={websiteMap} onChange={e=>setWebsiteMap(e.target.value)} placeholder="https://yourwebsite.com/sitemap.xml (optional)" /></label>
+        <label style={{display:"block",textAlign:"left"}}>Source Git repository URL<input className="field-input" type="url" value={repoUrl} onChange={e=>setRepoUrl(e.target.value)} placeholder="https://github.com/owner/repository (auto-detected for GitHub Pages)" /></label>
+        <label style={{display:"block",textAlign:"left"}}>Repository access token<input className="field-input" type="password" autoComplete="new-password" value={websiteToken} onChange={e=>setWebsiteToken(e.target.value)} placeholder="Token with repository read/write access" /></label>
+        <p className="helper">Sitemap is reference information. Visual editing and Git push require the source repository. The token is used for this connection only and is not saved to the customer profile.</p>
         <div className="action-row" style={{justifyContent:"flex-end",marginTop:20}}><button className="button subtle" onClick={()=>setOnboardingStep("website")}>← Back</button><button className="button primary" onClick={continueExistingWebsite}>Continue to connect →</button></div></>}
       {onboardingStep === "templates" && <><h1>Choose your website template</h1><p>Pick a starter design. You can edit text, images, links and basic design, then save a draft and preview it. No Git token is needed for this template preview.</p>
         <div className="starter-grid" style={{gridTemplateColumns:"repeat(auto-fit,minmax(190px,1fr))"}}>{starterTemplates.map(template=><button key={template.id} className="starter-card" onClick={()=>{finishOnboarding();startFromTemplate(template);}}><span className="starter-swatch" style={{background:template.accent}}></span><b>{template.title}</b><small>{template.description}</small></button>)}</div>
