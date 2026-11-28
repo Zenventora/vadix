@@ -676,11 +676,11 @@ function writeSafePreviewWindow(previewWindow: Window, html: string) {
     };
     const continueExistingWebsite = () => {
       const url = websiteUrl.trim();
-      if (!/^https?:\\/\\//i.test(url)) { setNotice({ kind: "error", text: "Enter a valid website URL beginning with https://" }); return; }
+      if (!(url.startsWith("https://") || url.startsWith("http://"))) { setNotice({ kind: "error", text: "Enter a valid website URL beginning with https://" }); return; }
       setWebsiteUrl(url);
       let owner = "", repoName = "";
       try { const parsedUrl = new URL(url); if (parsedUrl.hostname.endsWith(".github.io")) { owner = parsedUrl.hostname.split(".")[0]; repoName = parsedUrl.pathname.split("/").filter(Boolean)[0] || owner + ".github.io"; } } catch {}
-      const selectedBranch = /^[\\w.-]+$/.test(websiteMap.trim()) ? websiteMap.trim() : "main";
+      const selectedBranch = /^[A-Za-z0-9_.-]+$/.test(websiteMap.trim()) ? websiteMap.trim() : "main";
       finishOnboarding();
       if (owner && repoName) {
         const detectedRepo = "https://github.com/" + owner + "/" + repoName;
