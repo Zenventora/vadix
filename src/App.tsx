@@ -777,7 +777,7 @@ function writeSafePreviewWindow(previewWindow: Window, html: string) {
         </div>
       </header>
 
-      <main className="workspace">
+      <main className={`workspace ${previewStage ? "preview-workspace" : ""}`}>
         <aside className="left-rail">
           <div className="rail-heading"><span>PROJECT</span><button className="icon-button" title="Connect another repository" onClick={() => setShowConnect(!showConnect)}>＋</button></div>
           {showConnect && !currentFile?.path.startsWith("vadix-starters/") && <form id="connect-repository-form" ref={connectFormRef} className="connect-form" onSubmit={connectRepository}>
