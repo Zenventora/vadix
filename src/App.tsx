@@ -161,16 +161,18 @@ export default function App() {
   const frameRef = useRef<HTMLIFrameElement>(null);
   const htmlResultResolve = useRef<((html: string) => void) | null>(null);
 
+  // Start with blank customer details on each app entry; avoid reusing another
+  // customer's onboarding data from browser storage on shared devices.
   useEffect(() => {
-    if (!user?.id) { setOnboardingDone(false); setCustomerPath(null); return; }
-    try {
-      setOnboardingDone(localStorage.getItem("vadix:onboarding-complete:" + user.id) === "1");
-      const profile = JSON.parse(localStorage.getItem("vadix:customer-profile:" + user.id) || "{}");
-      setBusinessDetails(current => ({...current,...profile}));
-      setWebsiteUrl(profile.websiteUrl || "");
-      setWebsiteMap(profile.websiteMap || "");
-      setCustomerPath(localStorage.getItem("vadix:customer-path:" + user.id) as "new" | "existing" | null);
-    } catch { setOnboardingDone(false); }
+    setOnboardingDone(false);
+    setOnboardingStep("details");
+    setCustomerPath(null);
+    setBusinessDetails({ name: "", email: "", phone: "", tagline: "" });
+    setWebsiteUrl("");
+    setWebsiteMap("");
+    setWebsiteToken("");
+    setRepoUrl("");
+    setBranch("main");
   }, [user?.id]);
 
   useEffect(() => {
@@ -667,11 +669,7 @@ function writeSafePreviewWindow(previewWindow: Window, html: string) {
 
   if (user && !repo && !currentFile && ( !onboardingDone || customerPath !== "existing")) {
     const finishOnboarding = () => {
-      try {
-        localStorage.setItem("vadix:onboarding-complete:" + user.id, "1");
-        localStorage.setItem("vadix:customer-profile:" + user.id, JSON.stringify({...businessDetails, websiteUrl, websiteMap}));
-        localStorage.setItem("vadix:customer-path:" + user.id, customerPath || "new");
-      } catch {}
+      // Keep this setup in the current flow only; do not persist customer data.
       setOnboardingDone(true);
     };
     const continueExistingWebsite = () => {
