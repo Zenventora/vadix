@@ -542,8 +542,19 @@ export default function App() {
     previewWindow.document.close();
   }
 
+function writeSafePreviewWindow(previewWindow: Window, html: string) {
+  previewWindow.opener = null;
+  previewWindow.document.open();
+  const csp = "<meta http-equiv=\"Content-Security-Policy\" content=\"default-src https: data: blob:; script-src 'none'; connect-src 'none'; object-src 'none'; frame-src 'none'; form-action 'none'; base-uri 'none'\">";
+  previewWindow.document.write(html.replace("<head", "<head" + csp));
+  previewWindow.document.close();
+}
+
   async function saveDraft() {
     if (!currentFile || !user) return setNotice({ kind: "error", text: "Sign in and open a website page before saving a draft." });
+    let previewTab: Window | null = null;
+    const templateDraft = !repo && currentFile.path.startsWith("vadix-starters/");
+    if (templateDraft) { previewTab = window.open("about:blank", "_blank"); if (!previewTab) { setNotice({ kind: "error", text: "Allow pop-ups for VADIX to open the separate preview tab." }); return; } }
     try {
       const content = await requestEditedHtml();
       const key = repo ? "vadix:draft:" + user.id + ":" + repo.owner + "/" + repo.name + ":" + repo.branch + ":" + currentFile.path : "vadix:starter-draft:" + user.id + ":" + currentFile.path;
@@ -552,10 +563,10 @@ export default function App() {
       const previewRepository = repo || { provider: "github" as GitProvider, owner: "template-preview", name: "draft", branch: "main", root: "" };
       setFrameHtml(buildPreview(content, previewRepository, currentFile.path));
       setDirty(true);
-      if (!repo && currentFile.path.startsWith("vadix-starters/")) {
-        setPreviewStage(true);
-        setEditorPanelOpen(false);
-        setNotice({ kind: "ok", text: "Template draft saved. This is a preview only; nothing has been pushed to Git." });
+      if (templateDraft && previewTab) {
+        writeSafePreviewWindow(previewTab, buildPreview(content, previewRepository, currentFile.path));
+        setPreviewStage(false); setEditorPanelOpen(true);
+        setNotice({ kind: "ok", text: "Draft saved. Separate preview tab opened; nothing has been pushed to Git." });
       } else {
         setNotice({ kind: "ok", text: "Changes saved to your private draft. Review Preview, then push when ready." });
       }
